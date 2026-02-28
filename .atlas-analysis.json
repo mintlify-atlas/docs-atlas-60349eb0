@@ -1,0 +1,165 @@
+{
+  "projectType": "framework",
+  "projectName": "Northwestern Laravel Starter",
+  "projectDescription": "A comprehensive Laravel starter kit for building enterprise applications at Northwestern University",
+  "theme": "linden",
+  "primaryColor": "#4E2A84",
+  "lightColor": "#836EAA",
+  "darkColor": "#2E1A4F",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quick-start",
+              "project-structure"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/domain-driven-design",
+              "architecture/actions-pattern",
+              "architecture/configuration"
+            ]
+          },
+          {
+            "group": "Authentication & Authorization",
+            "pages": [
+              "auth/overview",
+              "auth/entra-id-sso",
+              "auth/email-verification",
+              "auth/roles-permissions",
+              "auth/impersonation"
+            ]
+          },
+          {
+            "group": "API Features",
+            "pages": [
+              "api/overview",
+              "api/access-tokens",
+              "api/request-logging",
+              "api/rate-limiting",
+              "api/error-handling"
+            ]
+          },
+          {
+            "group": "User Management",
+            "pages": [
+              "users/overview",
+              "users/provisioning",
+              "users/profiles",
+              "users/login-records"
+            ]
+          },
+          {
+            "group": "Auditing & Compliance",
+            "pages": [
+              "auditing/overview",
+              "auditing/audit-trail",
+              "auditing/data-security"
+            ]
+          },
+          {
+            "group": "Northwestern Integrations",
+            "pages": [
+              "integrations/overview",
+              "integrations/directory-service",
+              "integrations/eventhub"
+            ]
+          },
+          {
+            "group": "Frontend",
+            "pages": [
+              "frontend/overview",
+              "frontend/filament-admin",
+              "frontend/northwestern-theme",
+              "frontend/accessibility"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/local-setup",
+              "development/database-management",
+              "development/testing",
+              "development/artisan-commands"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/production-setup",
+              "deployment/environment-configuration",
+              "deployment/health-checks",
+              "deployment/monitoring"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "api-reference/overview",
+              "api-reference/authentication",
+              "api-reference/errors"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api-reference/user",
+              "api-reference/access-tokens"
+            ]
+          },
+          {
+            "group": "Webhooks",
+            "pages": [
+              "api-reference/eventhub-webhooks"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Domain-Driven Design architecture with modular business domains",
+    "Multi-authentication support (Entra ID SSO, Access Tokens, Email verification)",
+    "Role-based access control with fine-grained permissions",
+    "Comprehensive API with access token management and CIDR restrictions",
+    "Full audit trail for model changes and user actions",
+    "Northwestern Directory integration with JIT user provisioning",
+    "EventHub integration for event publishing and webhooks",
+    "Pre-built Filament admin panels with Northwestern branding",
+    "Database snapshots and rebuild utilities for local development",
+    "Health checks and monitoring dashboards",
+    "Parallelized testing with PHPUnit and Cypress",
+    "CI/CD ready with GitHub Actions workflows"
+  ],
+  "publicApiSurface": [
+    "GET /api/v1/me - Get authenticated user profile",
+    "GET /api/v1/me/tokens - List user's access tokens",
+    "POST /api/v1/me/tokens - Create new access token",
+    "GET /api/v1/me/tokens/{token} - Get access token details",
+    "DELETE /api/v1/me/tokens/{token} - Revoke access token",
+    "GET /api/health - Health check endpoint",
+    "POST /api/eventhub/netid-update - EventHub NetID update webhook",
+    "php artisan starter:check - Validate starter configuration",
+    "php artisan db:rebuild - Rebuild database with fresh data",
+    "php artisan starter:changelog - Generate changelog from commits",
+    "php artisan access-tokens:send-expiration-notifications - Send token expiration emails",
+    "php artisan config:validate - Validate environment configuration",
+    "App\\Domains\\Auth\\Actions\\Api\\IssueAccessToken - Issue new API access token",
+    "App\\Domains\\Auth\\Actions\\Impersonation\\StartImpersonation - Start user impersonation",
+    "App\\Domains\\User\\Actions\\CreateOrUpdateUserFromDirectory - Sync user from Northwestern Directory"
+  ]
+}
