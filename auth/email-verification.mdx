@@ -1,0 +1,473 @@
+---
+title: "Email Verification Code Authentication"
+description: "Passwordless authentication for external users via email verification codes"
+---
+
+The starter kit includes a passwordless authentication system for external collaborators who don't have organizational SSO credentials. Users receive a time-limited verification code via email that they use to log in.
+
+## Overview
+
+Email verification authentication provides secure, passwordless access for:
+
+- External collaborators and partners
+- Client users
+- Temporary access accounts
+- Any user without organizational SSO credentials
+
+<Warning>
+  **Administrator Setup Required**: Local user accounts must be created by administrators in the admin panel before users can authenticate. The system does not support self-registration.
+</Warning>
+
+## Authentication Flow
+
+<Steps>
+  <Step title="Request Verification Code">
+    User visits `/auth/login` and enters their email address. The system validates the email and checks if a local user account exists.
+  </Step>
+  
+  <Step title="Issue Login Challenge">
+    If the user exists, the system generates a `LoginChallenge` with a random 6-digit code via `IssueLoginChallenge` action (app/Domains/Auth/Actions/Local/IssueLoginChallenge.php:29).
+    
+    The code is hashed using Laravel's Hash facade and never stored in plain text.
+  </Step>
+  
+  <Step title="Send Email">
+    The `SendLoginCodeEmailJob` is dispatched to send the verification code via email. The encrypted code is passed to the job for security.
+  </Step>
+  
+  <Step title="Enter Verification Code">
+    User enters the 6-digit code on the verification page. The system has 10 minutes to verify before expiration.
+  </Step>
+  
+  <Step title="Verify and Authenticate">
+    The `VerifyLoginChallengeCode` action validates the code against the stored hash (app/Domains/Auth/Actions/Local/VerifyLoginChallengeCode.php:21).
+    
+    On success, the user is authenticated and the challenge is marked as consumed.
+  </Step>
+</Steps>
+
+## Login Challenge Model
+
+The `LoginChallenge` model tracks the state of each verification attempt:
+
+<CodeGroup>
+```php LoginChallenge
+use App\Domains\Auth\Models\LoginChallenge;
+
+$challenge = LoginChallenge::create([
+    'email' => 'user@example.com',
+    'code_hash' => Hash::make($code),
+    'expires_at' => now()->addMinutes(10),
+    'requested_ip' => $request->ip(),
+    'requested_user_agent' => $request->userAgent(),
+]);
+
+// Check challenge state
+$challenge->isActive();      // Not expired, locked, or consumed
+$challenge->isExpired();     // Past expiration time
+$challenge->isLocked();      // Locked due to failed attempts
+$challenge->isConsumed();    // Successfully used
+```
+</CodeGroup>
+
+### Challenge Lifecycle
+
+1. **Active**: Freshly created and ready for verification
+2. **Expired**: Past the 10-minute expiration window
+3. **Locked**: Too many failed attempts (8+ attempts)
+4. **Consumed**: Successfully verified and user authenticated
+
+## Configuration
+
+All settings are in `config/local-auth.php`:
+
+```php
+return [
+    // Enable/disable local authentication system
+    'enabled' => env('LOCAL_AUTH_ENABLED', true),
+    
+    // Use fixed code (development only)
+    'use_fixed_code' => env('LOCAL_AUTH_USE_FIXED_CODE', false),
+    
+    // Rate limiting
+    'rate_limit_per_hour' => env('LOCAL_AUTH_RATE_LIMIT_PER_HOUR', 10),
+    
+    // Post-login redirect
+    'redirect_after_login' => env('LOCAL_AUTH_REDIRECT_AFTER_LOGIN', '/'),
+    
+    'code' => [
+        // Code configuration
+        'digits' => 6,
+        'expires_in_minutes' => 10,
+        'max_attempts' => 8,
+        'lock_minutes' => 15,
+        
+        // Resend cooldown
+        'resend_cooldown_seconds' => 30,
+        
+        // Data retention
+        'retention_days' => 30,
+    ],
+];
+```
+
+### Environment Variables
+
+```bash .env
+# Enable local authentication
+LOCAL_AUTH_ENABLED=true
+
+# Rate limiting (requests per hour)
+LOCAL_AUTH_RATE_LIMIT_PER_HOUR=10
+
+# Where to redirect after successful login
+LOCAL_AUTH_REDIRECT_AFTER_LOGIN=/dashboard
+
+# Development: Use fixed code ("123456")
+LOCAL_AUTH_USE_FIXED_CODE=false
+
+# Code settings
+LOCAL_AUTH_CODE_DIGITS=6
+LOCAL_AUTH_CODE_EXPIRES_MINUTES=10
+LOCAL_AUTH_CODE_MAX_ATTEMPTS=8
+LOCAL_AUTH_CODE_LOCK_MINUTES=15
+LOCAL_AUTH_CODE_RESEND_COOLDOWN=30
+
+# Data retention (days to keep challenge records)
+LOGIN_CHALLENGE_RETENTION_DAYS=30
+```
+
+## Security Features
+
+### Timing Attack Protection
+
+The `SendLoginCodeController` implements timing equalization to prevent user enumeration:
+
+<CodeGroup>
+```php Timing Protection
+private const int MIN_TOTAL_RESPONSE_TIME_MS = 500;
+
+private function processLoginCodeRequest(string $email, Request $request): ?LoginChallenge
+{
+    $jitterMs = random_int(0, 50);
+    $minimumTimeMs = self::MIN_TOTAL_RESPONSE_TIME_MS + $jitterMs;
+    
+    $this->timebox->call(function (Timebox $timebox) use ($email) {
+        $timebox->dontReturnEarly();
+        
+        $user = User::firstLocalByEmail($email);
+        if (!$user) {
+            return; // Same timing whether user exists or not
+        }
+        
+        // Issue challenge...
+    }, $minimumTimeMs * 1000);
+}
+```
+</CodeGroup>
+
+This ensures attackers cannot determine if an email is registered based on response times.
+
+### Rate Limiting
+
+Multiple layers of rate limiting prevent abuse:
+
+1. **Request Rate Limit**: 10 login attempts per email per hour
+2. **Resend Cooldown**: 30 seconds between code resend requests
+3. **Attempt Lockout**: Account locked for 15 minutes after 8 failed attempts
+
+### Code Security
+
+- Codes are hashed with `Hash::make()` before storage
+- Plain codes are never logged or stored in the database
+- Codes are transmitted to email job encrypted with `Crypt::encryptString()`
+- Challenge IDs in session are also encrypted
+
+### IP and User Agent Tracking
+
+Each challenge records:
+
+```php
+'requested_ip' => $request->ip(),
+'requested_user_agent' => Str::limit($request->userAgent(), 512, ''),
+'consumed_ip' => $request->ip(),  // On successful verification
+'consumed_user_agent' => $request->userAgent(),
+```
+
+This provides audit trails for security investigations.
+
+## Issuing Login Challenges
+
+The `IssueLoginChallenge` action handles code generation and persistence:
+
+<CodeGroup>
+```php IssueLoginChallenge
+use App\Domains\Auth\Actions\Local\IssueLoginChallenge;
+
+class IssueLoginChallenge
+{
+    public function __invoke(
+        string $email,
+        ?string $ip,
+        ?string $userAgent
+    ): LoginChallenge {
+        $email = mb_strtolower(trim($email));
+        
+        // Check rate limits
+        $rateLimitKey = "login-code:{$email}";
+        if (RateLimiter::tooManyAttempts($rateLimitKey, $maxAttempts)) {
+            throw new RuntimeException("Too many login attempts...");
+        }
+        
+        return DB::transaction(function () use ($email, $ip, $userAgent) {
+            $code = ($this->oneTimeCodeGenerator)($digits);
+            
+            $challenge = LoginChallenge::create([
+                'email' => $email,
+                'code_hash' => Hash::make($code),
+                'expires_at' => now()->addMinutes($expires),
+                'requested_ip' => $ip,
+                'requested_user_agent' => $userAgent,
+            ]);
+            
+            // Queue email job
+            SendLoginCodeEmailJob::dispatch(
+                loginChallengeId: $challenge->id,
+                encryptedCode: Crypt::encryptString($code)
+            )->afterCommit();
+            
+            RateLimiter::hit($rateLimitKey);
+            
+            return $challenge;
+        });
+    }
+}
+```
+</CodeGroup>
+
+## Verifying Login Codes
+
+The `VerifyLoginChallengeCode` action validates codes and handles failures:
+
+<CodeGroup>
+```php VerifyLoginChallengeCode
+use App\Domains\Auth\Actions\Local\VerifyLoginChallengeCode;
+
+class VerifyLoginChallengeCode
+{
+    public function __invoke(
+        LoginChallenge $challenge,
+        string $code,
+        ?string $ip,
+        ?string $userAgent
+    ): bool {
+        // Check if challenge is active
+        if (!$challenge->isActive()) {
+            return false;
+        }
+        
+        // Verify code hash
+        if (!Hash::check($code, $challenge->code_hash)) {
+            $challenge->increment('attempts');
+            
+            // Lock after max attempts
+            if ($challenge->attempts >= $maxAttempts) {
+                $challenge->update([
+                    'locked_until' => now()->addMinutes($lockMinutes)
+                ]);
+            }
+            
+            return false;
+        }
+        
+        // Mark as consumed
+        $challenge->update([
+            'consumed_at' => now(),
+            'consumed_ip' => $ip,
+            'consumed_user_agent' => $userAgent,
+        ]);
+        
+        return true;
+    }
+}
+```
+</CodeGroup>
+
+## Routes
+
+Email verification routes in `routes/auth.php`:
+
+```php
+Route::middleware('guest')->group(function () {
+    // Show email input form
+    Route::get('login', ShowLoginCodeRequestController::class)
+        ->name('login-code.request');
+    
+    // Send initial code
+    Route::post('login/request', [SendLoginCodeController::class, 'send'])
+        ->middleware('throttle:auth:login-code:request')
+        ->name('login-code.send');
+    
+    // Resend code
+    Route::post('login/resend', [SendLoginCodeController::class, 'resend'])
+        ->middleware('throttle:auth:login-code:request')
+        ->name('login-code.resend');
+    
+    // Show code verification form
+    Route::get('login/code', ShowLoginCodeFormController::class)
+        ->name('login-code.code');
+    
+    // Verify code and authenticate
+    Route::post('login/verify', VerifyLoginCodeController::class)
+        ->middleware('throttle:auth:login-code:verify')
+        ->name('login-code.verify');
+});
+```
+
+## Development Mode
+
+For local development and testing, enable fixed codes:
+
+```bash .env
+LOCAL_AUTH_USE_FIXED_CODE=true
+```
+
+<Warning>
+  **Production Safety**: The fixed code feature is blocked from running in `production`, `develop`, and `qa` environments. Attempting to enable it in these environments will fail.
+</Warning>
+
+With fixed codes enabled, the system always generates `123456` as the verification code, making automated testing easier.
+
+## Data Retention
+
+Old `LoginChallenge` records are automatically pruned using Laravel's model pruning:
+
+```php
+use Illuminate\Database\Eloquent\MassPrunable;
+
+class LoginChallenge extends BaseModel
+{
+    use MassPrunable;
+    
+    public function prunable(): Builder
+    {
+        $retentionDays = config('local-auth.code.retention_days');
+        
+        if ($retentionDays === null) {
+            return static::query()->whereRaw('1 = 0'); // Disabled
+        }
+        
+        return static::query()
+            ->where('created_at', '<', now()->subDays($retentionDays));
+    }
+}
+```
+
+Run pruning via scheduled command:
+
+```bash
+php artisan model:prune
+```
+
+## Creating Local Users
+
+Administrators create local user accounts in the admin panel:
+
+<Steps>
+  <Step title="Navigate to Users">
+    Access the admin panel and navigate to **Users** section.
+  </Step>
+  
+  <Step title="Create User">
+    Click **Create User** and select **LOCAL** as the authentication type.
+  </Step>
+  
+  <Step title="Enter Email">
+    Provide the user's email address. This will be used for verification code delivery.
+  </Step>
+  
+  <Step title="Assign Roles">
+    Assign appropriate roles to define the user's permissions.
+  </Step>
+  
+  <Step title="Notify User">
+    Inform the user they can now log in using their email address to receive a verification code.
+  </Step>
+</Steps>
+
+## Customization
+
+### Custom Email Templates
+
+Modify the verification email in `app/Domains/Auth/Mail/LoginCodeNotification.php`:
+
+```php
+use Illuminate\Mail\Mailable;
+
+class LoginCodeNotification extends Mailable
+{
+    public function __construct(
+        public string $code,
+        public int $expiresInMinutes
+    ) {}
+    
+    public function build()
+    {
+        return $this->subject('Your Verification Code')
+            ->markdown('emails.auth.login-code');
+    }
+}
+```
+
+### Custom Code Generator
+
+Implement the `OneTimeCodeGenerator` contract to customize code generation:
+
+```php
+use App\Domains\Auth\Contracts\OneTimeCodeGenerator;
+
+class CustomCodeGenerator implements OneTimeCodeGenerator
+{
+    public function __invoke(int $digits): string
+    {
+        // Your custom logic
+        return str_pad((string) random_int(0, 10 ** $digits - 1), $digits, '0');
+    }
+}
+```
+
+Bind in service provider:
+
+```php
+$this->app->bind(OneTimeCodeGenerator::class, CustomCodeGenerator::class);
+```
+
+## Troubleshooting
+
+### Codes Not Being Received
+
+1. Check email queue is processing: `php artisan queue:work`
+2. Verify mail configuration in `.env`
+3. Check spam folder
+4. Review mail logs
+
+### "Too Many Attempts" Error
+
+1. Check rate limit configuration
+2. Wait for rate limit window to expire (1 hour)
+3. Clear rate limiter: `RateLimiter::clear("login-code:{$email}")`
+
+### Challenge Locked
+
+After 8 failed attempts, challenges lock for 15 minutes. User must wait or request a new code.
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Microsoft Entra ID SSO" icon="shield-check" href="/auth/entra-id-sso">
+    SSO authentication for organizational users
+  </Card>
+  <Card title="Roles & Permissions" icon="user-shield" href="/auth/roles-permissions">
+    Managing user permissions
+  </Card>
+</CardGroup>

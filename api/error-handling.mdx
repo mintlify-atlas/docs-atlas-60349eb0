@@ -1,0 +1,496 @@
+---
+title: 'Error Handling (RFC 9457)'
+description: 'Standardized error responses with Problem Details JSON format, trace IDs, and detailed failure reasons'
+---
+
+## Overview
+
+All API errors return standardized [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457) responses with consistent structure, machine-readable error types, and trace IDs for request correlation.
+
+## RFC 9457 Problem Details
+
+Problem Details provides a standardized error response format for HTTP APIs:
+
+- **Consistent structure** across all error types
+- **Machine-readable** error types for automated handling
+- **Human-readable** titles and details for debugging
+- **Extensible** with custom fields
+
+**Specification:** [RFC 9457 - Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc9457)
+
+## Error Response Structure
+
+All error responses follow this structure:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Authentication failed",
+  "instance": "/api/v1/users",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+### Core Fields
+
+<ParamField path="type" type="string" format="uri" default="about:blank">
+  URI reference identifying the problem type. Defaults to `"about:blank"` which indicates the title is the error description.
+</ParamField>
+
+<ParamField path="title" type="string" required>
+  Short, human-readable summary. Should **not change** between occurrences of the same error type.
+</ParamField>
+
+<ParamField path="status" type="integer" required>
+  HTTP status code (advisory; included for client convenience).
+</ParamField>
+
+<ParamField path="detail" type="string">
+  Human-readable explanation specific to this occurrence. Should help the client correct the problem.
+</ParamField>
+
+<ParamField path="instance" type="string" format="uri-reference" required>
+  URI reference identifying this specific occurrence. Defaults to the request path.
+</ParamField>
+
+### Extension Fields
+
+<ParamField path="trace_id" type="uuid">
+  Unique identifier for request correlation. Links to [API request logs](/api/request-logging).
+  
+  Only present if the request reached the authentication middleware. Framework-level errors (404, 405) may not have a trace ID.
+</ParamField>
+
+<ParamField path="errors" type="object">
+  Validation errors keyed by field name (only present for 422 Unprocessable Entity responses).
+  
+  ```json
+  "errors": {
+    "name": ["The name field is required."],
+    "expires_at": ["The expires at must be at least 24 hours from now."]
+  }
+  ```
+</ParamField>
+
+## Response Headers
+
+### Content-Type
+
+All error responses use the RFC 9457 media type:
+
+```http
+Content-Type: application/problem+json
+```
+
+### Trace ID Header
+
+The trace ID is included in response headers for easy correlation:
+
+```http
+X-Trace-Id: b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f
+```
+
+### WWW-Authenticate (401 Only)
+
+Unauthorized responses include authentication realm:
+
+```http
+WWW-Authenticate: Bearer realm="Northwestern Laravel Starter API"
+```
+
+### Retry-After (429 and 503)
+
+Rate limit and service unavailable responses include retry duration:
+
+```http
+Retry-After: 60
+```
+
+## Common Error Responses
+
+### 400 Bad Request
+
+Malformed request that cannot be processed:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "The request could not be understood by the server.",
+  "instance": "/api/v1/users",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+**Common causes:**
+- Invalid JSON syntax
+- Invalid argument types
+- Malformed request headers
+
+### 401 Unauthorized
+
+Authentication failed or missing:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Authentication failed",
+  "instance": "/api/v1/users",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+**Response headers:**
+```http
+WWW-Authenticate: Bearer realm="Northwestern Laravel Starter API"
+```
+
+See [Failure Reasons](#failure-reasons) for specific authentication failure details.
+
+### 403 Forbidden
+
+Authenticated but lacks permission:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Forbidden",
+  "status": 403,
+  "detail": "You do not have permission to access this resource.",
+  "instance": "/api/v1/users/123",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+**Common causes:**
+- Insufficient permissions/roles
+- Attempting to access another user's resources
+- Authorization policy failures
+
+### 404 Not Found
+
+Resource does not exist:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Resource not found",
+  "instance": "/api/v1/users/999",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+<Note>
+  404 errors for invalid routes may not include a `trace_id` if the route doesn't exist in the application.
+</Note>
+
+### 405 Method Not Allowed
+
+HTTP method not supported for endpoint:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Method Not Allowed",
+  "status": 405,
+  "detail": "The HTTP method used is not supported for this endpoint.",
+  "instance": "/api/v1/users/123"
+}
+```
+
+**Response headers:**
+```http
+Allow: GET, PUT, DELETE
+```
+
+### 409 Conflict
+
+Request conflicts with current resource state:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Conflict",
+  "status": 409,
+  "detail": "A token with this name already exists.",
+  "instance": "/api/v1/access-tokens",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+**Common causes:**
+- Unique constraint violations
+- Version conflicts
+- Stale update attempts
+
+### 413 Payload Too Large
+
+Request body exceeds size limits:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Payload Too Large",
+  "status": 413,
+  "detail": "Payload too large",
+  "instance": "/api/v1/upload"
+}
+```
+
+### 422 Unprocessable Entity
+
+Validation failed:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unprocessable Entity",
+  "status": 422,
+  "detail": "Validation failed",
+  "instance": "/api/v1/access-tokens",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f",
+  "errors": {
+    "name": [
+      "The name field is required."
+    ],
+    "expires_at": [
+      "The expires at must be at least 24 hours from now."
+    ],
+    "allowed_ips.0": [
+      "The allowed IP address is not a valid IP address or CIDR range."
+    ]
+  }
+}
+```
+
+The `errors` object contains field-specific validation messages.
+
+### 429 Too Many Requests
+
+[Rate limit](/api/rate-limiting) exceeded:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Too Many Requests",
+  "status": 429,
+  "detail": "Too many requests. Please try again later.",
+  "instance": "/api/v1/users",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+**Response headers:**
+```http
+Retry-After: 60
+```
+
+### 500 Internal Server Error
+
+Unexpected server-side error:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Internal Server Error",
+  "status": 500,
+  "detail": "An unexpected error occurred",
+  "instance": "/api/v1/users",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+<Warning>
+  In production, error details are generic to avoid leaking sensitive information. Use trace IDs to find detailed errors in logs.
+</Warning>
+
+### 503 Service Unavailable
+
+API temporarily disabled:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Service Unavailable",
+  "status": 503,
+  "detail": "Service temporarily unavailable",
+  "instance": "/api/v1/users"
+}
+```
+
+**Response headers:**
+```http
+Retry-After: 3600
+```
+
+**Common causes:**
+- `API_ENABLED=false` in configuration
+- Maintenance mode
+- Infrastructure issues
+
+## Failure Reasons
+
+The system tracks specific failure reasons for authentication and authorization errors. These are stored in [request logs](/api/request-logging) and help with debugging and security monitoring.
+
+### Authentication Failures
+
+| Failure Reason | Description | HTTP Status |
+|----------------|-------------|-------------|
+| `invalid-header-format` | Authorization header missing or not prefixed with "Bearer " | 401 |
+| `missing-credentials` | Authorization header has "Bearer " but no token provided | 401 |
+| `token-invalid-or-expired` | Token not found, expired, or associated user is inactive | 401 |
+| `ip-denied` | Client IP does not match token's `allowed_ips` configuration | 401 |
+
+### General Failures
+
+| Failure Reason | Description | HTTP Status |
+|----------------|-------------|-------------|
+| `validation-failed` | Request payload failed validation rules | 422 |
+| `unauthorized` | Missing or invalid permissions for resource | 403 |
+| `conflict` | Request conflicts with current resource state | 409 |
+| `database-error` | Database connectivity or constraint violation | 500 |
+| `server-error` | Unexpected server-side error | 500 |
+
+**Implementation:** `app/Domains/Core/Enums/ApiRequestFailureEnum.php:14`
+
+These reasons are:
+- Logged in `api_request_logs` table
+- Used for security monitoring
+- Viewable in admin UI for troubleshooting
+
+## Implementation Details
+
+### Exception Mapping
+
+The `ProblemDetailsRenderer` maps Laravel exceptions to RFC 9457 responses:
+
+**Implementation:** `app/Domains/Core/Exceptions/ProblemDetailsRenderer.php:48`
+
+```php
+public function render(Throwable $e, Request $request): ?JsonResponse
+{
+    if (! $request->is('api/*') && ! $request->wantsJson()) {
+        return null;
+    }
+
+    return match (true) {
+        $e instanceof ValidationException => 
+            ProblemDetails::unprocessableEntity(errors: $e->errors()),
+        
+        $e instanceof AuthenticationException => 
+            ProblemDetails::unauthorized(),
+        
+        $e instanceof ThrottleRequestsException => 
+            ProblemDetails::tooManyRequests(
+                retryAfter: $e->getHeaders()['Retry-After'] ?? 60
+            ),
+        
+        // ... other mappings
+    };
+}
+```
+
+### When Problem Details Apply
+
+RFC 9457 responses are returned for:
+
+- All routes under `/api/*`
+- Any request with `Accept: application/json` header
+- Any request that calls `$request->wantsJson()`
+
+Web routes receive standard HTML error pages.
+
+## Client Handling
+
+### Example: Python Client
+
+```python
+import requests
+
+def make_api_request(url, token):
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json"
+    }
+    
+    response = requests.get(url, headers=headers)
+    
+    if not response.ok:
+        error = response.json()
+        print(f"Error {error['status']}: {error['title']}")
+        print(f"Detail: {error.get('detail', 'No additional details')}")
+        print(f"Trace ID: {error.get('trace_id', 'N/A')}")
+        
+        if 'errors' in error:
+            print("Validation errors:")
+            for field, messages in error['errors'].items():
+                print(f"  {field}: {', '.join(messages)}")
+    
+    return response
+```
+
+### Example: JavaScript Client
+
+```javascript
+async function makeApiRequest(url, token) {
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json'
+    }
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    console.error(`Error ${error.status}: ${error.title}`);
+    console.error(`Detail: ${error.detail || 'No additional details'}`);
+    console.error(`Trace ID: ${error.trace_id || 'N/A'}`);
+    
+    if (error.errors) {
+      console.error('Validation errors:');
+      for (const [field, messages] of Object.entries(error.errors)) {
+        console.error(`  ${field}: ${messages.join(', ')}`);
+      }
+    }
+  }
+  
+  return response;
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always check status codes first">
+    Don't rely solely on title or type. HTTP status codes are the primary indicator of response success/failure.
+  </Accordion>
+
+  <Accordion title="Store trace IDs for support requests">
+    When reporting errors, include the trace ID. This allows support teams to locate exact request logs.
+  </Accordion>
+
+  <Accordion title="Handle validation errors gracefully">
+    Parse the `errors` object for 422 responses and display field-specific messages to users.
+  </Accordion>
+
+  <Accordion title="Respect Retry-After headers">
+    For 429 and 503 responses, wait the specified duration before retrying.
+  </Accordion>
+
+  <Accordion title="Don't parse error details for logic">
+    Error `detail` messages are for humans. Use status codes and types for programmatic decisions.
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+- [Access Tokens](/api/access-tokens) - Authentication failure reasons
+- [Request Logging](/api/request-logging) - Error responses are always logged
+- [Rate Limiting](/api/rate-limiting) - 429 error responses and retry behavior

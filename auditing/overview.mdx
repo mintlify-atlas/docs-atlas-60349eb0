@@ -1,0 +1,198 @@
+---
+title: 'Auditing Overview'
+description: 'Comprehensive audit trail system for tracking all data changes and user actions'
+---
+
+The Northwestern Laravel Starter includes a robust auditing system that automatically tracks all changes to your application's data. Built on the [Laravel Auditing](https://laravel-auditing.com) package, it provides complete visibility into who changed what, when, and why.
+
+## What Gets Audited
+
+The application automatically tracks changes to critical models:
+
+- **Users** - Profile changes, authentication events, role assignments
+- **Roles** - Creation, updates, deletion, permission changes
+- **Permissions** - Any modifications to the permission system
+- **Custom Models** - Any model extending `BaseModel` or using the `Auditable` trait
+
+### Tracked Events
+
+By default, the following Eloquent events trigger audit records:
+
+```php config/audit.php
+'events' => [
+    'created',
+    'updated',
+    'deleted',
+    'restored',
+],
+```
+
+<Note>
+The `restored` event captures when soft-deleted records are recovered, providing a complete lifecycle history.
+</Note>
+
+## Audit Record Structure
+
+Each audit record captures comprehensive information:
+
+| Field | Description |
+|-------|-------------|
+| `trace_id` | UUID linking related operations (especially for API requests) |
+| `user_id` | The user who performed the action |
+| `event` | The type of event (created, updated, deleted, etc.) |
+| `auditable_type` | The model class that was changed |
+| `auditable_id` | The ID of the specific record |
+| `old_values` | JSON snapshot of values before the change |
+| `new_values` | JSON snapshot of values after the change |
+| `url` | The request URL (includes Livewire component for AJAX requests) |
+| `ip_address` | Client IP address |
+| `user_agent` | Browser/client information |
+| `tags` | Custom tags for categorization |
+| `impersonator_user_id` | If the action was performed while impersonating another user |
+
+## Configuration
+
+The audit system is configured in `config/audit.php`:
+
+```php config/audit.php
+return [
+    // Enable/disable auditing globally
+    'enabled' => env('AUDITING_ENABLED', true),
+    
+    // Storage driver (database by default)
+    'driver' => 'database',
+    
+    // Database configuration
+    'drivers' => [
+        'database' => [
+            'table' => 'audits',
+            'connection' => null,
+        ],
+    ],
+    
+    // User identification
+    'user' => [
+        'morph_prefix' => 'user',
+        'guards' => ['web', 'api'],
+    ],
+];
+```
+
+### Disabling Audits
+
+To disable auditing (e.g., in local development), set:
+
+```bash .env
+AUDITING_ENABLED=false
+```
+
+<Warning>
+Disabling audits in production environments will result in a loss of compliance and security tracking. Only disable auditing if you fully understand the implications.
+</Warning>
+
+## Making Models Auditable
+
+To enable auditing for your custom models, use the `Auditable` trait:
+
+```php app/Domains/YourDomain/Models/YourModel.php
+use App\Domains\Core\Models\Concerns\Auditable as AuditableConcern;
+use OwenIt\Auditing\Contracts\Auditable;
+
+class YourModel extends Model implements Auditable
+{
+    use AuditableConcern;
+    
+    // Exclude sensitive fields from audit trail
+    protected array $auditExclude = [
+        'password',
+        'remember_token',
+        'api_secret',
+    ];
+}
+```
+
+<Note>
+All models extending `BaseModel` automatically include auditing functionality.
+</Note>
+
+## Excluding Sensitive Data
+
+Protect sensitive information by excluding fields from audit trails:
+
+```php app/Domains/User/Models/User.php
+protected array $auditExclude = [
+    'last_directory_sync_at',  // Internal sync tracking
+    'remember_token',           // Session security
+    'password',                 // Never audit passwords
+];
+```
+
+## Accessing Audit Records
+
+### Through the Admin Panel
+
+Administrators can view audit logs through the Filament admin interface:
+
+1. Navigate to **Audits** in the admin sidebar
+2. Filter by user, model type, event type, or date range
+3. View detailed before/after comparisons
+4. Export audit records for compliance reporting
+
+### Programmatically
+
+Access audit records for any model:
+
+```php
+$user = User::find(1);
+
+// Get all audits for this user
+$audits = $user->audits;
+
+// Get only updates
+$updates = $user->audits()->where('event', 'updated')->get();
+
+// Check what changed in the last update
+$lastAudit = $user->audits()->latest()->first();
+$changes = $lastAudit->getModified();
+```
+
+## Performance Considerations
+
+### Queue Configuration
+
+For high-traffic applications, queue audit record creation:
+
+```php config/audit.php
+'queue' => [
+    'enable' => true,
+    'connection' => 'redis',
+    'queue' => 'audits',
+],
+```
+
+### Audit Retention
+
+Set a threshold to automatically clean up old audit records:
+
+```php config/audit.php
+// Keep only the last 1000 audits per model
+'threshold' => 1000,
+
+// Set to 0 for unlimited retention
+'threshold' => 0,
+```
+
+<Warning>
+Carefully consider your compliance requirements before implementing automatic cleanup. Some regulations require maintaining audit trails for specific time periods.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Audit Trail Implementation" icon="list-check" href="/auditing/audit-trail">
+    Learn about custom audit events and role/permission tracking
+  </Card>
+  <Card title="Data Security" icon="shield" href="/auditing/data-security">
+    Understand encryption and hashing practices
+  </Card>
+</CardGroup>

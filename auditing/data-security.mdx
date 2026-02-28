@@ -1,0 +1,383 @@
+---
+title: 'Data Security'
+description: 'Encryption, hashing, and security best practices for protecting sensitive data'
+---
+
+The Northwestern Laravel Starter implements comprehensive data security measures including encryption for data in transit, hashing for passwords and sensitive tokens, and secure session management.
+
+## Encryption Strategy
+
+The application uses Laravel's encryption services, which provide AES-256-CBC encryption through OpenSSL.
+
+### Session Encryption
+
+All session data is encrypted by default:
+
+```php config/session.php
+'encrypt' => env('SESSION_ENCRYPT', true),
+```
+
+<Warning>
+Never set `SESSION_ENCRYPT=false` in production environments. Encrypted sessions protect against session hijacking and data exposure if session storage is compromised.
+</Warning>
+
+### Broadcasting Encryption
+
+Real-time communication channels use encrypted connections:
+
+```php config/broadcasting.php
+'pusher' => [
+    'driver' => 'pusher',
+    'key' => env('PUSHER_APP_KEY'),
+    'secret' => env('PUSHER_APP_SECRET'),
+    'app_id' => env('PUSHER_APP_ID'),
+    'options' => [
+        'cluster' => env('PUSHER_APP_CLUSTER'),
+        'encrypted' => true,  // Force TLS
+    ],
+],
+```
+
+### Sensitive Data in Transit
+
+The application encrypts sensitive data before storing it in session or passing it between requests.
+
+**Example: Login Challenge IDs**
+
+```php app/Domains/Auth/Http/Controllers/Local/SendLoginCodeController.php
+use Illuminate\Support\Facades\Crypt;
+
+// Encrypt the challenge ID before storing in session
+Session::put(
+    LoginCodeSession::CHALLENGE_ID,
+    $challenge
+        ? Crypt::encryptString((string) $challenge->id)
+        : Crypt::encryptString(Str::uuid()->toString())
+);
+```
+
+**Decryption:**
+
+```php app/Domains/Auth/Http/Controllers/Local/VerifyLoginCodeController.php
+private function decryptChallengeId(): ?string
+{
+    $encrypted = session(LoginCodeSession::CHALLENGE_ID);
+
+    if (! $encrypted) {
+        return null;
+    }
+
+    try {
+        return Crypt::decryptString($encrypted);
+    } catch (DecryptException $e) {
+        // Handle decryption failure
+        Session::forget(LoginCodeSession::CHALLENGE_ID);
+        return null;
+    }
+}
+```
+
+<Note>
+Encrypting challenge IDs prevents attackers from guessing valid IDs and attempting brute force attacks, even if they gain access to session storage.
+</Note>
+
+## Hashing Strategy
+
+The application uses bcrypt hashing for one-way encryption of passwords and sensitive verification codes.
+
+### Password Hashing
+
+User passwords are never stored in plain text:
+
+```php
+use Illuminate\Support\Facades\Hash;
+
+// Storing a password
+$user->password = Hash::make($plainTextPassword);
+
+// Verifying a password
+if (Hash::check($plainTextPassword, $user->password)) {
+    // Password is correct
+}
+```
+
+**Bcrypt Configuration:**
+- Automatically salted for each hash
+- Configurable work factor in `config/hashing.php`
+- Default rounds: 10 (suitable for most applications)
+
+### Login Code Hashing
+
+Email-based login codes are hashed before storage:
+
+```php app/Domains/Auth/Actions/Local/IssueLoginChallenge.php
+$challenge = LoginChallenge::create([
+    'email' => $data['email'],
+    'code_hash' => Hash::make($code),  // Store hash, not plaintext
+    'expires_at' => now()->addMinutes(15),
+]);
+```
+
+**Verification:**
+
+```php app/Domains/Auth/Actions/Local/VerifyLoginChallengeCode.php
+public function handle(LoginChallenge $challenge, string $code): bool
+{
+    // Compare provided code with stored hash
+    if (! Hash::check($code, $challenge->code_hash)) {
+        return false;
+    }
+    
+    // Additional checks (expiration, consumption, etc.)
+    // ...
+}
+```
+
+<Warning>
+Never log or audit hashed values. If you need to audit authentication attempts, log only metadata like timestamps, IP addresses, and success/failure status.
+</Warning>
+
+## Encrypted Code Transmission
+
+Verification codes are encrypted when passed to background jobs for email delivery:
+
+```php app/Domains/Auth/Jobs/SendLoginCodeEmailJob.php
+public function __construct(
+    public readonly int $loginChallengeId,
+    public readonly string $encryptedCode,  // Encrypted in transit
+) {}
+
+public function handle(): void
+{
+    $challenge = LoginChallenge::find($this->loginChallengeId);
+    
+    if (! $challenge) {
+        return;  // Challenge was deleted
+    }
+    
+    // Decrypt only when ready to send
+    Mail::to($challenge->email)
+        ->send(new LoginCodeNotification(
+            challenge: $challenge,
+            encryptedCode: $this->encryptedCode,
+        ));
+}
+```
+
+**In the Email:**
+
+```php app/Domains/Auth/Mail/LoginCodeNotification.php
+public function build(): self
+{
+    // Decrypt only at the last possible moment
+    $code = Crypt::decryptString($this->encryptedCode);
+    
+    return $this->markdown('emails.auth.login-code')
+        ->subject('Your Login Code')
+        ->with([
+            'code' => $code,
+            'expiresAt' => $this->challenge->expires_at,
+        ]);
+}
+```
+
+### Why Encrypt in Transit?
+
+This multi-layer approach prevents code exposure:
+
+1. **In Job Queue** - Queue workers can't see plaintext codes
+2. **In Logs** - Failed jobs don't log sensitive codes
+3. **In Memory** - Reduces window of plaintext exposure
+
+## API Token Security
+
+API access tokens use a secure prefix system:
+
+```php app/Domains/Auth/Models/AccessToken.php
+protected $casts = [
+    'token_prefix' => 'encrypted',
+];
+```
+
+The token prefix is encrypted in the database, while the full token is only shown once at creation time.
+
+**Token Generation Flow:**
+
+1. Generate random token: `Str::random(64)`
+2. Hash the token for database storage
+3. Encrypt the prefix for display/revocation
+4. Return full token to user (one time only)
+
+## Excluding Sensitive Fields from Audits
+
+Prevent sensitive data from appearing in audit trails:
+
+```php app/Domains/User/Models/User.php
+protected array $auditExclude = [
+    'last_directory_sync_at',  // Internal metadata
+    'remember_token',           // Session security
+    'password',                 // Never audit passwords
+];
+```
+
+**What to Exclude:**
+
+- Passwords and password hashes
+- Remember tokens
+- API secrets and keys
+- Temporary verification codes
+- Sensitive PII (depending on compliance requirements)
+
+<Note>
+Even though passwords are hashed, they should still be excluded from audits. There's no legitimate reason to track password changes beyond the fact that they occurred.
+</Note>
+
+## Environment-Based Security
+
+Security settings should adapt to the environment:
+
+```bash .env (Production)
+SESSION_ENCRYPT=true
+AUDITING_ENABLED=true
+SESSION_SECURE_COOKIE=true
+SESSION_HTTP_ONLY=true
+SESSION_SAME_SITE=strict
+```
+
+```bash .env (Local Development)
+SESSION_ENCRYPT=true
+AUDITING_ENABLED=true  # Keep enabled to catch issues
+SESSION_SECURE_COOKIE=false  # Allow HTTP in dev
+```
+
+## Encryption Key Management
+
+### Application Key
+
+Laravel's encryption services use the `APP_KEY` environment variable:
+
+```bash
+php artisan key:generate
+```
+
+<Warning>
+**Critical Security Requirements:**
+- Generate a unique key for each environment
+- Never commit `APP_KEY` to version control
+- Rotate keys periodically (requires re-encryption of data)
+- Store production keys in secure secret management (Azure Key Vault, AWS Secrets Manager, etc.)
+</Warning>
+
+### Key Rotation
+
+If you need to rotate the encryption key:
+
+1. **Before rotation**, decrypt and re-encrypt all encrypted database columns
+2. Update the `APP_KEY` environment variable  
+3. Clear all sessions (users will need to re-login)
+4. Regenerate any encrypted tokens
+
+```php
+// Example migration for key rotation
+public function up(): void
+{
+    $oldKey = config('app.previous_key');
+    $newKey = config('app.key');
+    
+    AccessToken::chunk(100, function ($tokens) use ($oldKey, $newKey) {
+        foreach ($tokens as $token) {
+            // Decrypt with old key, re-encrypt with new key
+            $decrypted = Crypt::decrypt($token->token_prefix, false, $oldKey);
+            $token->token_prefix = Crypt::encrypt($decrypted, false, $newKey);
+            $token->save();
+        }
+    });
+}
+```
+
+## Rate Limiting for Security
+
+Rate limiting protects against brute force attacks:
+
+```php app/Providers/RateLimitingServiceProvider.php
+RateLimiter::for('login-verification', function (Request $request) {
+    $encryptedChallengeId = Session::get(LoginCodeSession::CHALLENGE_ID);
+    
+    $key = 'login-verification:';
+    
+    if ($encryptedChallengeId) {
+        try {
+            $challengeKey = Crypt::decryptString($encryptedChallengeId);
+            $key .= $challengeKey;
+        } catch (DecryptException) {
+            $key .= $request->ip();
+        }
+    } else {
+        $key .= $request->ip();
+    }
+    
+    return Limit::perMinute(5)->by($key);
+});
+```
+
+This implementation:
+- Limits verification attempts per challenge
+- Falls back to IP-based limiting if challenge can't be decrypted
+- Prevents both targeted and distributed brute force attacks
+
+## Security Best Practices
+
+### Do's
+
+✅ Always use `Crypt::encryptString()` for sensitive data in transit  
+✅ Always use `Hash::make()` for passwords and one-time codes  
+✅ Exclude sensitive fields from audit trails  
+✅ Validate and sanitize all user inputs  
+✅ Use HTTPS in all non-local environments  
+✅ Implement rate limiting on authentication endpoints  
+✅ Rotate encryption keys periodically  
+✅ Use environment-specific configuration  
+
+### Don'ts
+
+❌ Never store passwords or verification codes in plain text  
+❌ Never log or audit encrypted/hashed values  
+❌ Never commit secrets to version control  
+❌ Never use the same `APP_KEY` across environments  
+❌ Never disable session encryption in production  
+❌ Never expose internal IDs in public URLs without encryption  
+❌ Never decrypt data until absolutely necessary  
+
+## Compliance Considerations
+
+### GDPR / Privacy Regulations
+
+- **Right to be Forgotten**: Implement cascading deletes for user data
+- **Data Minimization**: Only audit necessary information
+- **Purpose Limitation**: Document why each field is audited
+- **Encryption at Rest**: Consider full database encryption for sensitive data
+
+### FERPA (Educational Records)
+
+- Restrict access to audit logs containing student information
+- Implement role-based access controls for audit viewing
+- Maintain audit trails for regulatory periods
+- Document all access to student records
+
+### SOC 2 / ISO 27001
+
+- Enable audit logging for all data access
+- Implement monitoring and alerting for suspicious activity
+- Maintain immutable audit trails
+- Regular security assessments and penetration testing
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Security" icon="key" href="/api/access-tokens">
+    Learn about API token generation and management
+  </Card>
+  <Card title="Role-Based Access" icon="shield-halved" href="/auth/roles-permissions">
+    Implement fine-grained access controls
+  </Card>
+</CardGroup>

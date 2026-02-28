@@ -1,0 +1,158 @@
+---
+title: Frontend Overview
+description: Learn about the frontend architecture and technologies used in Northwestern Laravel Starter
+---
+
+The Northwestern Laravel Starter provides a comprehensive frontend solution that combines modern web technologies with Northwestern University's branding guidelines. The frontend is built with accessibility, responsive design, and maintainability in mind.
+
+## Frontend Stack
+
+The application uses a hybrid approach, combining different technologies based on the use case:
+
+<CardGroup cols={2}>
+  <Card title="Filament Admin Panel" icon="gear" href="/frontend/filament-admin">
+    Modern admin interface built with Filament v3 for managing application data
+  </Card>
+  <Card title="Bootstrap 5" icon="bootstrap">
+    Responsive framework for public-facing pages and custom layouts
+  </Card>
+  <Card title="Northwestern Theme" icon="palette" href="/frontend/northwestern-theme">
+    University branding with custom SASS/CSS following brand guidelines
+  </Card>
+  <Card title="Accessibility" icon="universal-access" href="/frontend/accessibility">
+    WCAG 2.1 Level AA compliance for inclusive user experiences
+  </Card>
+</CardGroup>
+
+## Key Technologies
+
+### Filament Administration Panel
+
+The admin interface is powered by [Filament v3](https://filamentphp.com/), a modern Laravel admin panel that provides:
+
+- **Resources**: Pre-built CRUD interfaces for managing users, roles, audits, and more
+- **Pages**: Custom dashboard pages with widgets and analytics
+- **Widgets**: Reusable components for displaying data and metrics
+- **Tables**: Advanced data tables with filtering, sorting, and bulk actions
+- **Forms**: Dynamic form builders with validation and field types
+
+See the [Filament Admin Panel](/frontend/filament-admin) documentation for details.
+
+### Bootstrap 5
+
+Bootstrap 5.3.8 provides the foundation for responsive layouts and components:
+
+```json
+"bootstrap": "^5.3.8"
+```
+
+The framework is customized with Northwestern's brand colors, typography, and design patterns.
+
+### Build Tools
+
+The frontend build process uses modern tooling:
+
+- **Vite**: Fast development server and optimized production builds
+- **SASS**: CSS preprocessing with Northwestern theme variables
+- **TypeScript**: Type-safe JavaScript for enhanced development
+- **Alpine.js**: Lightweight JavaScript framework for interactive components
+
+## Directory Structure
+
+The frontend assets are organized in the following structure:
+
+```
+resources/
+├── css/
+│   └── filament/
+│       └── administration/
+│           └── theme.css          # Filament theme customization
+├── sass/
+│   ├── _variables.scss            # Northwestern color variables
+│   ├── app.scss                   # Main application styles
+│   ├── nu_fonts.scss              # Northwestern typography
+│   ├── nu_purple_layout.scss      # Northwestern branding styles
+│   └── social_icons.scss          # Social media icons
+├── views/
+│   ├── auth/                      # Authentication pages
+│   ├── components/                # Reusable Blade components
+│   └── filament/                  # Filament view customizations
+└── js/
+    └── app.ts                     # Main JavaScript entry point
+```
+
+## Filament Structure
+
+The Filament admin panel code is organized in the `app/Filament/` directory:
+
+```
+app/Filament/
+├── Clusters/                      # Grouped navigation sections
+│   └── ApiCluster/               # API-related pages cluster
+├── Exports/                       # Data export configurations
+├── Navigation/                    # Custom navigation groups
+├── Pages/                         # Custom dashboard pages
+├── Resources/                     # CRUD resources
+│   ├── AccessTokens/
+│   ├── ApiRequestLogs/
+│   ├── Audits/
+│   ├── Roles/
+│   ├── SupportTickets/
+│   ├── UserLoginRecords/
+│   └── Users/
+└── Widgets/                       # Dashboard widgets
+```
+
+Each resource includes:
+
+- **Resource class**: Defines the model, navigation, and configuration
+- **Pages**: List, create, edit, and view pages
+- **Tables**: Table configuration with columns, filters, and actions
+- **Schemas**: Form and infolist schemas
+- **Widgets**: Resource-specific dashboard widgets
+
+## Northwestern Branding
+
+The application follows Northwestern University's visual identity guidelines:
+
+- **Primary Color**: Northwestern Purple (`#4E2A84`)
+- **Typography**: Akkurat Pro for body text, with brand-compliant font families
+- **Lockup**: Northwestern wordmark and logo implementation
+- **Footer**: Standardized footer with office contact information
+
+See the [Northwestern Theme](/frontend/northwestern-theme) documentation for customization options.
+
+## Responsive Design
+
+All frontend components are built with mobile-first responsive design:
+
+- Fluid grid system using Bootstrap breakpoints
+- Mobile-optimized navigation and forms
+- Touch-friendly interactive elements
+- Responsive data tables with horizontal scrolling on small screens
+
+## Performance
+
+The frontend is optimized for performance:
+
+- **Asset bundling**: Vite bundles and minifies CSS and JavaScript
+- **Code splitting**: Lazy loading for improved initial load times
+- **Optimized images**: Proper sizing and compression for Northwestern logos
+- **Caching**: Browser caching for static assets
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Filament Admin Panel" icon="gear" href="/frontend/filament-admin">
+    Learn how to work with Filament resources, pages, and widgets
+  </Card>
+  <Card title="Northwestern Theme" icon="palette" href="/frontend/northwestern-theme">
+    Customize branding and styling for your department
+  </Card>
+  <Card title="Accessibility" icon="universal-access" href="/frontend/accessibility">
+    Ensure your application meets WCAG 2.1 standards
+  </Card>
+  <Card title="Development" icon="code" href="/development/local-setup">
+    Set up your local development environment
+  </Card>
+</CardGroup>

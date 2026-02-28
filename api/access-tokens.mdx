@@ -1,0 +1,234 @@
+---
+title: 'Access Token Management'
+description: 'Secure API authentication with HMAC-SHA256 tokens, IP restrictions, expiration, and automated notifications'
+---
+
+## Overview
+
+Access tokens provide secure, token-based authentication for API requests. Tokens are hashed using HMAC-SHA256 before storage and support advanced security features like IP allowlisting and automatic expiration.
+
+## Token Authentication Flow
+
+1. User creates an access token (via admin UI or API endpoint)
+2. Plain token is displayed **once** and must be saved securely
+3. Token is hashed with HMAC-SHA256 and stored in the database
+4. Client includes token in `Authorization` header for API requests
+5. Middleware validates token hash and enforces IP restrictions
+6. Usage metadata (last used timestamp, count, IP) is updated
+
+## Authorization Header Format
+
+All API requests must include the access token in the `Authorization` header:
+
+```http
+Authorization: Bearer YOUR_ACCESS_TOKEN_HERE
+```
+
+<Warning>
+  The token must be prefixed with `Bearer ` (note the space). Missing or malformed headers will result in authentication failure.
+</Warning>
+
+## Token Security Features
+
+### HMAC-SHA256 Hashing
+
+Tokens are never stored in plain text. The system:
+
+- Generates a cryptographically secure random token
+- Hashes it with HMAC-SHA256 using the application key
+- Stores only the hash in the database
+- Validates requests by comparing hashes
+
+**Implementation:** `app/Domains/Auth/Models/AccessToken.php:145`
+
+```php
+public static function hashFromPlain(string $token): string
+{
+    return hash_hmac('sha256', $token, (string) config('app.key'));
+}
+```
+
+### IP Address Restrictions
+
+Tokens can be restricted to specific IP addresses or CIDR ranges for enhanced security.
+
+<ParamField path="allowed_ips" type="array<string>" default="null">
+  List of allowed IP addresses or CIDR ranges. If null or empty, token can be used from any IP.
+</ParamField>
+
+**Examples:**
+
+```json
+// Single IP address
+"allowed_ips": ["192.168.1.100"]
+
+// Multiple IP addresses
+"allowed_ips": ["192.168.1.100", "10.0.0.50"]
+
+// CIDR range (entire subnet)
+"allowed_ips": ["192.168.1.0/24"]
+
+// Mixed individual IPs and CIDR ranges
+"allowed_ips": ["192.168.1.100", "10.0.0.0/16"]
+
+// No restrictions
+"allowed_ips": null
+```
+
+**Implementation:** Uses Symfony's `IpUtils::checkIp()` for validation in `app/Domains/Auth/Http/Middleware/AuthenticatesAccessTokens.php:106`
+
+<Note>
+  If IP restrictions are configured but the request IP is missing (e.g., misconfigured proxy), authentication will fail and an exception will be reported.
+</Note>
+
+### Token Expiration
+
+Tokens can have an optional expiration date for compliance and security rotation policies.
+
+<ParamField path="expires_at" type="datetime" default="null">
+  Optional expiration timestamp. If null, token never expires. Expired tokens cannot be used for authentication.
+</ParamField>
+
+**Expiration Notifications:**
+
+Users receive automated email notifications before token expiration at configurable intervals:
+
+<ParamField path="API_ACCESS_TOKEN_EXPIRATION_NOTIFICATIONS_ENABLED" type="boolean" default="true">
+  Enable automated expiration reminder emails.
+</ParamField>
+
+<ParamField path="expiration_notifications.intervals" type="array<int>" default="[30, 14, 7, 3, 1]">
+  Days before expiration to send notification emails (default: 30, 14, 7, 3, and 1 day before).
+</ParamField>
+
+## Token Lifecycle
+
+### Token Status
+
+Each access token has a computed status based on its attributes:
+
+- **Active** - Token is valid and can be used for authentication
+- **Expired** - Token's `expires_at` date has passed
+- **Revoked** - Token has been manually revoked (via `revoked_at` timestamp)
+
+**Implementation:** `app/Domains/Auth/Models/AccessToken.php:125`
+
+```php
+protected function status(): Attribute
+{
+    return Attribute::make(
+        get: function () {
+            return match (true) {
+                filled($this->revoked_at) => AccessTokenStatusEnum::REVOKED,
+                $this->expires_at?->isPast() => AccessTokenStatusEnum::EXPIRED,
+                default => AccessTokenStatusEnum::ACTIVE,
+            };
+        }
+    );
+}
+```
+
+### Token Rotation
+
+Tokens can be rotated to maintain security while preserving audit trails:
+
+- New token is generated with same permissions
+- Old token is linked via `rotated_from_token_id`
+- Rotation user is tracked via `rotated_by_user_id`
+- Old token can be immediately revoked or kept temporarily active
+
+## Usage Tracking
+
+Every successful API request updates token metadata:
+
+<ParamField path="usage_count" type="integer">
+  Incremented with each successful request. Useful for monitoring token activity.
+</ParamField>
+
+<ParamField path="last_used_at" type="datetime">
+  Timestamp of the most recent successful request. Used to identify stale tokens.
+</ParamField>
+
+<ParamField path="last_ip_used" type="string">
+  IP address of the most recent successful request. Helps detect suspicious activity.
+</ParamField>
+
+**Implementation:** `app/Domains/Auth/Http/Middleware/AuthenticatesAccessTokens.php:86`
+
+```php
+AccessToken::withoutAuditing(fn () => $accessToken->increment(
+    column: 'usage_count',
+    extra: ['last_used_at' => now(), 'last_ip_used' => $request->ip()]
+));
+```
+
+<Note>
+  Usage tracking updates are performed without triggering audit logs to avoid excessive audit trail entries.
+</Note>
+
+## Authentication Failures
+
+The authentication middleware tracks specific failure reasons for security monitoring and debugging:
+
+| Failure Reason | Description |
+|----------------|-------------|
+| `invalid-header-format` | Authorization header missing or not prefixed with "Bearer " |
+| `missing-credentials` | Authorization header has "Bearer " but no token provided |
+| `token-invalid-or-expired` | Token not found, expired, or associated user is inactive |
+| `ip-denied` | Request IP does not match token's `allowed_ips` configuration |
+
+**Implementation:** `app/Domains/Core/Enums/ApiRequestFailureEnum.php:16`
+
+These failure reasons are:
+- Logged in [API request logs](/api/request-logging) for security audits
+- Used to generate appropriate error responses
+- Available in admin UI for troubleshooting
+
+## Token Metadata
+
+Tokens store additional metadata for management and security:
+
+<ParamField path="name" type="string">
+  Human-readable name for the token (e.g., "Production Server", "Mobile App").
+</ParamField>
+
+<ParamField path="token_prefix" type="string" encrypted>
+  First few characters of the plain token, encrypted for identification purposes without exposing the full token.
+</ParamField>
+
+<ParamField path="user_id" type="integer">
+  ID of the API user who owns this token. User must have `auth_type` of `API`.
+</ParamField>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use IP restrictions for production tokens">
+    Always configure `allowed_ips` for tokens used in production environments. This adds an extra security layer even if a token is compromised.
+  </Accordion>
+
+  <Accordion title="Set reasonable expiration dates">
+    Configure expiration dates aligned with your security policies. Common durations:
+    - **90 days** - High-security environments
+    - **180 days** - Balanced security and convenience
+    - **365 days** - Low-risk applications with rotation reminders
+  </Accordion>
+
+  <Accordion title="Rotate tokens regularly">
+    Even if not expired, rotate tokens periodically as part of security hygiene. Use the rotation feature to maintain audit trails.
+  </Accordion>
+
+  <Accordion title="Monitor last_used_at for stale tokens">
+    Review tokens that haven't been used recently and revoke them to reduce attack surface.
+  </Accordion>
+
+  <Accordion title="Never commit tokens to version control">
+    Store tokens in environment variables or secrets managers. Never hardcode them in application code.
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+- [API Request Logging](/api/request-logging) - View detailed logs of token usage
+- [Error Handling](/api/error-handling) - Understand authentication failure responses
+- [Rate Limiting](/api/rate-limiting) - Rate limits apply per-user for authenticated requests

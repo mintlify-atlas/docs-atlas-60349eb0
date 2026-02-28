@@ -1,0 +1,511 @@
+---
+title: Project Structure
+description: Understanding the domain-driven architecture of Northwestern Laravel Starter
+---
+
+Northwestern Laravel Starter uses a **domain-driven design (DDD)** approach to organize code by business concerns rather than technical layers. This structure enhances modularity, maintainability, and makes it easier to reason about complex business logic.
+
+## Overview
+
+The project follows Laravel's standard directory structure with a custom domain-based organization in the `app/Domains` directory:
+
+```
+northwestern-laravel-starter/
+├── app/
+│   ├── Console/          # Artisan commands
+│   ├── Domains/          # Domain-driven business logic
+│   ├── Filament/         # Admin panel resources
+│   ├── Http/             # HTTP layer (controllers, middleware)
+│   ├── Providers/        # Service providers
+│   └── View/             # View composers and components
+├── bootstrap/            # Application bootstrap
+├── config/               # Configuration files
+├── database/             # Migrations, factories, seeders
+├── public/               # Public assets
+├── resources/            # Views, frontend assets
+├── routes/               # Route definitions
+├── storage/              # Application storage
+├── tests/                # Test suites
+└── vendor/               # Composer dependencies
+```
+
+## Domain Architecture
+
+The `app/Domains` directory contains five core domains:
+
+<CardGroup cols={2}>
+  <Card title="Auth" icon="key">
+    Authentication, authorization, and access tokens
+  </Card>
+  <Card title="User" icon="user">
+    User management, profiles, and Northwestern Directory integration
+  </Card>
+  <Card title="Support" icon="headset">
+    Contact forms, ticketing, and changelog
+  </Card>
+  <Card title="Core" icon="cube">
+    Shared utilities, database tools, health checks
+  </Card>
+  <Card title="Foundation" icon="building">
+    Base classes and cross-cutting concerns
+  </Card>
+</CardGroup>
+
+### Domain Structure
+
+Each domain follows a consistent internal structure:
+
+```
+app/Domains/{DomainName}/
+├── Actions/              # Single-purpose action classes
+├── Contracts/            # Interfaces and contracts
+├── Enums/                # PHP enumerations
+├── Events/               # Domain events
+├── Exceptions/           # Domain-specific exceptions
+├── Http/                 # Controllers, requests, middleware
+│   ├── Controllers/
+│   ├── Middleware/
+│   └── Requests/
+├── Jobs/                 # Queued jobs
+├── Listeners/            # Event listeners
+├── Mail/                 # Mailable classes
+├── Models/               # Eloquent models
+├── Policies/             # Authorization policies
+├── QueryBuilders/        # Custom query builders
+├── Rules/                # Validation rules
+├── Seeders/              # Database seeders
+└── ValueObjects/         # Value objects
+```
+
+<Note>
+  Not every domain contains all subdirectories. Directories are created only when needed for that domain's functionality.
+</Note>
+
+## Domain Breakdown
+
+### Auth Domain
+
+Handles all authentication and authorization concerns:
+
+```
+app/Domains/Auth/
+├── Actions/
+│   ├── AccessToken/          # Token management actions
+│   ├── Entra/                # Microsoft Entra ID SSO
+│   └── Local/                # Email verification code auth
+├── Enums/
+│   └── TokenExpirationEnum.php
+├── Http/
+│   ├── Controllers/
+│   │   ├── Api/              # API token authentication
+│   │   ├── Entra/            # SSO callbacks
+│   │   └── Local/            # Local auth endpoints
+│   └── Middleware/
+│       └── EnsureApiEnabled.php
+├── Jobs/
+│   └── SendTokenExpirationNotification.php
+├── Mail/
+│   ├── AccessTokenExpiringMail.php
+│   └── LoginCodeMail.php
+├── Models/
+│   ├── LoginChallenge.php    # Passwordless login codes
+│   └── UserApiToken.php      # API access tokens
+└── Policies/
+    └── UserApiTokenPolicy.php
+```
+
+**Key Features:**
+- Multi-authentication methods (Entra ID, API tokens, email codes)
+- CIDR-based IP restrictions for API tokens
+- Token rotation and expiration management
+- Automatic expiration notifications
+
+### User Domain
+
+Manages user accounts, profiles, and Northwestern integrations:
+
+```
+app/Domains/User/
+├── Actions/
+│   ├── Directory/                    # Northwestern Directory sync
+│   │   ├── FindOrUpdateUserFromDirectory.php
+│   │   └── SyncUserFromDirectory.php
+│   ├── Local/
+│   │   └── CreateLocalUser.php
+│   ├── DetermineUserSegment.php
+│   ├── PersistUserWithUniqueUsername.php
+│   └── RecordLogin.php
+├── Enums/
+│   └── UserSegment.php               # Faculty, staff, student, etc.
+├── Events/
+│   └── NetIdUpdated.php
+├── Http/
+│   ├── Controllers/
+│   │   ├── Api/V1/
+│   │   │   └── UserApiController.php
+│   │   ├── Webhooks/
+│   │   │   └── NetIdUpdateController.php # EventHub webhook
+│   │   └── WildcardPhotoController.php
+├── Jobs/
+│   └── DownloadWildcardPhoto.php
+├── Listeners/
+│   ├── LogImpersonationAccess.php
+│   └── ProcessNetIdUpdate.php
+├── Models/
+│   ├── Concerns/
+│   │   ├── AuditsPermissions.php
+│   │   ├── AuditsRoles.php
+│   │   ├── HandlesImpersonation.php
+│   │   └── TracksPermissionSources.php
+│   ├── ImpersonationLog.php
+│   ├── User.php
+│   └── UserLoginRecord.php
+├── Policies/
+│   ├── AuditPolicy.php
+│   ├── UserLoginRecordPolicy.php
+│   └── UserPolicy.php
+└── QueryBuilders/
+    └── UserBuilder.php
+```
+
+**Key Features:**
+- Just-in-time user provisioning from Northwestern Directory
+- Wildcard photo synchronization
+- User impersonation with audit logging
+- Login history tracking
+- EventHub webhook integration for NetID updates
+
+### Support Domain
+
+Handles user support, ticketing, and changelog:
+
+```
+app/Domains/Support/
+├── Actions/
+│   ├── CreateSupportTicket.php
+│   └── SendSupportEmail.php
+├── Contracts/
+│   └── SupportGateway.php
+├── Enums/
+│   └── SupportDriver.php
+├── Exceptions/
+│   └── SupportException.php
+├── Gateways/
+│   ├── MailSupportGateway.php        # Email-based support
+│   └── TeamDynamixSupportGateway.php # TDX ticketing integration
+├── Models/
+│   └── SupportTicket.php
+└── Seeders/
+    └── ChangelogSeeder.php
+```
+
+**Key Features:**
+- Contact/support forms
+- Multiple ticketing backends (email, TeamDynamix)
+- Changelog with JIRA integration
+- Rate limiting for support requests
+
+### Core Domain
+
+Shared utilities and cross-cutting concerns:
+
+```
+app/Domains/Core/
+├── Attributes/
+│   └── AutoSeed.php                  # Auto-seeding attribute
+├── Database/
+│   ├── ValueObjects/
+│   │   ├── SchemaSnapshot.php        # Database snapshot management
+│   │   ├── SchemaFileCollection.php
+│   │   └── SeederInfo.php
+├── Enums/
+│   └── Environment.php
+├── Exceptions/
+│   └── ConfigurationException.php
+├── GlobalAlerts/
+│   └── EnvironmentLockdownAlert.php
+├── Health/
+│   ├── ConfigurationHealthCheck.php
+│   └── ApplicationConfigValidator.php
+├── Helpers/
+│   └── helpers.php                   # Global helper functions
+├── Models/
+│   └── ApiRequestLog.php
+├── Rules/
+│   └── ValidIpOrCidrRule.php
+├── Seeders/
+│   └── IdempotentSeeder.php          # Rerunnable seeders
+└── Services/
+    └── IdempotentSeederResolver.php
+```
+
+**Key Features:**
+- Database snapshot/restore utilities
+- Health checks for critical systems
+- Configuration validation
+- API request logging and analytics
+- Idempotent seeding
+
+### Foundation Domain
+
+Base classes and foundation-level concerns:
+
+```
+app/Domains/Foundation/
+└── Casts/
+    └── EncryptedJson.php
+```
+
+## Filament Admin Panel
+
+The `app/Filament` directory contains all admin panel resources:
+
+```
+app/Filament/
+├── Clusters/
+│   └── ApiCluster/                   # API-related pages grouped
+│       ├── Pages/
+│       │   └── Overview.php
+│       └── ApiCluster.php
+├── Exports/                          # Data export definitions
+│   ├── ApiRequestLogExporter.php
+│   ├── AuditExporter.php
+│   ├── RoleExporter.php
+│   └── UserExporter.php
+├── Navigation/
+│   └── AdministrationNavGroup.php    # Custom navigation groups
+├── Pages/
+│   └── Platform/
+│       └── Overview.php              # Dashboard
+├── Resources/
+│   ├── AccessTokens/
+│   │   ├── Actions/                  # Custom actions
+│   │   ├── Schemas/                  # Form schemas
+│   │   └── UserApiTokenResource.php
+│   ├── ApiRequestLogs/
+│   │   ├── Pages/
+│   │   ├── Tables/
+│   │   ├── Widgets/                  # Charts and metrics
+│   │   └── ApiRequestLogResource.php
+│   ├── Audits/
+│   │   └── AuditResource.php
+│   ├── Roles/
+│   │   └── RoleResource.php
+│   ├── SupportTickets/
+│   │   └── SupportTicketResource.php
+│   ├── Users/
+│   │   ├── Actions/
+│   │   ├── Pages/
+│   │   ├── Widgets/
+│   │   └── UserResource.php
+│   └── UserLoginRecords/
+│       └── UserLoginRecordResource.php
+└── Widgets/
+    ├── ApiRequestOverviewWidget.php
+    └── LoginActivityWidget.php
+```
+
+<Note>
+  Filament resources are organized by domain concern. Each resource contains tables, forms, actions, and widgets specific to that data type.
+</Note>
+
+## HTTP Layer
+
+The `app/Http` directory contains controllers, middleware, and requests that don't belong to a specific domain:
+
+```
+app/Http/
+├── Controllers/
+│   ├── HomeController.php
+│   ├── Platform/
+│   │   └── EnvironmentLockdownController.php
+│   └── Support/
+│       ├── ChangelogController.php
+│       ├── ChangelogFeedController.php
+│       └── ContactController.php
+├── Middleware/
+│   ├── EnsureApiEnabled.php
+│   ├── EnvironmentLockdown.php
+│   └── InjectLivewireAssets.php
+├── Requests/
+│   ├── AsyncSelectOptionsRequest.php
+│   └── Support/
+│       └── ContactFormRequest.php
+└── Responses/
+    └── ProblemDetails.php            # RFC 9457 error responses
+```
+
+## Routes
+
+Routes are organized by purpose:
+
+```
+routes/
+├── api.php         # API endpoints (/api/v1/*)
+├── auth.php        # Authentication routes
+├── console.php     # Artisan commands as closures
+└── web.php         # Web application routes
+```
+
+### Route Organization
+
+**api.php** - RESTful API routes:
+```php
+Route::prefix('v1')->name('v1.')->group(function () {
+    Route::apiResource('users', UserApiController::class);
+});
+```
+
+**auth.php** - Authentication flows:
+```php
+Route::middleware('guest')->group(function () {
+    // Entra ID SSO routes
+    // Local auth routes
+    // Token auth routes
+});
+```
+
+**web.php** - Public web routes:
+```php
+Route::get('/', HomeController::class)->name('home');
+Route::prefix('support')->name('support.')->group(...);
+```
+
+## Database Layer
+
+```
+database/
+├── factories/              # Model factories for testing
+├── migrations/             # Database migrations
+│   ├── 0001_01_01_000000_create_users_table.php
+│   ├── 2025_03_02_020514_create_audits_table.php
+│   ├── 2025_03_04_182643_create_permission_tables.php
+│   ├── 2025_03_10_235306_create_user_login_records_table.php
+│   ├── 2025_11_06_011123_create_user_api_tokens_table.php
+│   ├── 2025_11_14_151626_create_api_request_logs_table.php
+│   └── ...
+└── seeders/                # Database seeders
+    ├── DatabaseSeeder.php
+    └── ...domain seeders...
+```
+
+<Note>
+  Migrations are timestamped and version controlled. Domain-specific seeders are located within each domain's `Seeders/` directory.
+</Note>
+
+## Testing Structure
+
+```
+tests/
+├── Feature/                # Feature tests
+│   ├── Domains/
+│   │   ├── Auth/
+│   │   ├── Core/
+│   │   ├── Support/
+│   │   └── User/
+│   ├── Http/
+│   │   ├── Controllers/
+│   │   └── Middleware/
+│   └── Providers/
+├── Unit/                   # Unit tests
+│   ├── Domains/
+│   └── View/
+├── Pest.php               # Pest configuration
+└── TestCase.php           # Base test case
+```
+
+End-to-end tests:
+```
+cypress/
+├── e2e/
+│   ├── auth/
+│   │   ├── login.cy.ts
+│   │   └── logout.cy.ts
+│   └── home.cy.ts
+├── fixtures/
+├── plugins/
+└── support/
+```
+
+## Configuration Files
+
+All configuration is centralized in the `config/` directory:
+
+```
+config/
+├── api.php                 # API settings
+├── app.php                 # Application settings
+├── audit.php               # Audit configuration
+├── auth.php                # Authentication guards
+├── changelog.php           # Changelog settings
+├── database.php            # Database connections
+├── db-snapshots.php        # Snapshot configuration
+├── health.php              # Health check settings
+├── local-auth.php          # Local auth configuration
+├── nusoa.php               # Northwestern SOA config
+├── permission.php          # Spatie permissions
+├── platform.php            # Platform-wide settings
+├── rate-limiting.php       # Rate limit definitions
+├── support.php             # Support/ticketing config
+└── ...
+```
+
+## Action-Based Business Logic
+
+The starter uses dedicated **Action classes** for business logic instead of fat models or controllers:
+
+```php
+// Example: Creating a local user
+app(CreateLocalUser::class)->execute(
+    firstName: 'John',
+    lastName: 'Doe',
+    email: 'john.doe@northwestern.edu',
+    username: 'jdoe'
+);
+
+// Example: Recording a login
+app(RecordLogin::class)->execute(
+    user: $user,
+    method: LoginMethod::EntraId,
+    ipAddress: $request->ip()
+);
+```
+
+**Benefits:**
+- Single responsibility
+- Easily testable
+- Reusable across controllers, jobs, commands
+- Clear intent and discoverability
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Configuration"
+    icon="gear"
+    href="/configuration"
+  >
+    Learn about all configuration options
+  </Card>
+  <Card
+    title="Domain-Driven Design"
+    icon="cubes"
+    href="/architecture/domain-driven-design"
+  >
+    Deep dive into DDD principles
+  </Card>
+  <Card
+    title="Actions Pattern"
+    icon="bolt"
+    href="/architecture/actions"
+  >
+    Learn about action-based architecture
+  </Card>
+  <Card
+    title="Testing"
+    icon="flask"
+    href="/testing"
+  >
+    Writing tests for your application
+  </Card>
+</CardGroup>

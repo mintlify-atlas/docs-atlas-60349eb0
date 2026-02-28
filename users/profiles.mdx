@@ -1,0 +1,275 @@
+---
+title: 'User Profiles and Data'
+description: 'Managing user profile information and synchronization'
+---
+
+User profiles contain demographic, organizational, and contact information sourced from the Northwestern Directory or manually entered during account creation.
+
+## Profile Data Structure
+
+The User model stores comprehensive profile information as defined in the database migration at `database/migrations/0001_01_01_000000_create_users_table.php:14`.
+
+### Personal Information
+
+#### Name Fields
+
+```php
+$user->first_name // "John"
+$user->last_name  // "Doe"
+$user->full_name  // "John Doe" (computed)
+$user->clerical_name // "Doe, John" (computed)
+```
+
+The `full_name` and `clerical_name` attributes are computed accessors defined at `app/Domains/User/Models/User.php:159`.
+
+#### Contact Information
+
+```php
+$user->email // Primary email address
+$user->phone // Phone number
+$user->timezone // User's timezone (defaults to platform setting)
+```
+
+### Identification
+
+#### Northwestern IDs
+
+```php
+$user->username // Northwestern NetID
+$user->employee_id // Student or employee ID
+$user->hr_employee_id // myHR employee ID (if different)
+```
+
+<Note>
+The `hr_employee_id` is only populated when a user has both a student ID and a different employee ID. Otherwise, it remains `null`.
+</Note>
+
+**Example Scenarios:**
+
+| Scenario | `employee_id` | `hr_employee_id` |
+|----------|---------------|------------------|
+| Student only | 1234567 | null |
+| Employee only | 7654321 | null |
+| Student + Employee (different IDs) | 1234567 | 7654321 |
+| Student + Employee (same ID) | 1234567 | null |
+
+### Organizational Data
+
+#### Affiliations
+
+The `primary_affiliation` field stores the user's primary relationship with Northwestern:
+
+```php
+use App\Domains\User\Enums\AffiliationEnum;
+
+$user->primary_affiliation // AffiliationEnum instance
+$user->primary_affiliation->value // 'student', 'faculty', 'staff', etc.
+$user->primary_affiliation->getLabel() // 'Student', 'Faculty', 'Staff', etc.
+```
+
+Affiliation values are defined at `app/Domains/User/Enums/AffiliationEnum.php:1`:
+
+- **STUDENT**: Enrolled students
+- **FACULTY**: Faculty members
+- **STAFF**: Staff employees
+- **AFFILIATE**: Affiliated users
+- **OTHER**: Unmatched or external users
+
+#### Departments and Job Titles
+
+Both departments and job titles are stored as JSON arrays:
+
+```php
+$user->departments // ['School of Engineering', 'Computer Science']
+$user->job_titles  // ['Professor', 'Department Chair']
+```
+
+These arrays can contain multiple values since users may have multiple appointments.
+
+<Note>
+For students, `job_titles` is intentionally left empty during directory sync (see `app/Domains/User/Actions/Directory/SyncUserFromDirectory.php:73`).
+</Note>
+
+### Optional Metadata
+
+```php
+$user->description // Custom description (primarily for local/API users)
+```
+
+The `description` field is typically used for:
+- Local users: Purpose or organizational context
+- API users: Service account description
+- SSO users: Rarely populated (directory data is more authoritative)
+
+## Profile Photo Management
+
+### Wildcard Photo Sync
+
+For SSO users, profile photos can be automatically synced from Northwestern's Wildcard system.
+
+```php
+$user->wildcard_photo_s3_key // S3 key where photo is stored
+$user->wildcard_photo_last_synced_at // Last sync timestamp
+```
+
+Photo synchronization is handled by `DownloadWildcardPhotoJob` and must be enabled via configuration:
+
+```php
+config('platform.wildcard_photo_sync') // Must be true
+```
+
+## Data Synchronization
+
+### SSO User Sync
+
+SSO user profiles are automatically synchronized from the Northwestern Directory during login. Sync timestamps track the synchronization state:
+
+```php
+$user->last_directory_sync_at // Last successful sync
+$user->directory_sync_last_failed_at // Last failed sync attempt
+$user->netid_inactive // NetID marked as inactive
+```
+
+#### Sync Frequency
+
+Profile data is refreshed on every login for SSO users via the `FindOrUpdateUserFromDirectory` action.
+
+#### Failed Sync Handling
+
+If directory data becomes invalid or incomplete, the sync logic (defined at `app/Domains/User/Actions/Directory/FindOrUpdateUserFromDirectory.php:160`) will:
+
+<Steps>
+<Step title="Mark NetID as Inactive">
+  Sets `netid_inactive = true` for SSO users
+</Step>
+
+<Step title="Record Failure Timestamp">
+  Updates `directory_sync_last_failed_at` to the current time
+</Step>
+
+<Step title="Preserve Existing Data">
+  Retains the user's last known profile data for historical purposes
+</Step>
+</Steps>
+
+### Local User Profiles
+
+Local user profiles are manually managed and do not sync from the directory.
+
+Creating a local user (see `app/Domains/User/Actions/Local/CreateLocalUser.php:1`):
+
+```php
+use App\Domains\User\Actions\Local\CreateLocalUser;
+
+$createLocalUser = resolve(CreateLocalUser::class);
+
+$user = $createLocalUser(
+    email: 'external@example.com',
+    firstName: 'Jane',
+    lastName: 'Smith',
+    title: 'Consultant',
+    department: 'External Partners',
+    description: 'Third-party consultant for Project X',
+    sendLoginLink: true
+);
+```
+
+**Key differences from SSO users:**
+
+- `auth_type` is set to `local`
+- `username` is auto-generated from email (e.g., `external-abc123`)
+- `primary_affiliation` defaults to `affiliate`
+- No directory synchronization occurs
+- Job title and department are stored as single-value arrays
+
+### API User Profiles
+
+API users represent service accounts. Creating an API user (see `app/Domains/User/Actions/Api/CreateApiUser.php:1`):
+
+```php
+use App\Domains\User\Actions\Api\CreateApiUser;
+
+$createApiUser = resolve(CreateApiUser::class);
+
+[$user, $rawToken] = $createApiUser(
+    username: 'api-external-service',
+    firstName: 'External Service',
+    tokenName: 'Production Token',
+    description: 'Integration with external CRM',
+    email: 'tech-team@example.com',
+    expiresAt: now()->addYear(),
+    allowedIps: ['192.168.1.0/24', '10.0.0.5']
+);
+
+// Store $rawToken securely - it cannot be retrieved later!
+```
+
+**Profile characteristics:**
+
+- `auth_type` is set to `api`
+- `last_name` is automatically set to "API"
+- `primary_affiliation` defaults to `other`
+- Email is optional (for expiration notifications)
+- Description should explain the service account's purpose
+
+## Auditing Profile Changes
+
+The User model implements auditing via the `Auditable` concern (see `app/Domains/User/Models/User.php:56`).
+
+### Excluded from Audit Trail
+
+Certain fields are excluded from audit logs to reduce noise:
+
+```php
+protected array $auditExclude = [
+    'last_directory_sync_at',
+    'remember_token',
+    'password',
+];
+```
+
+Defined at `app/Domains/User/Models/User.php:65`.
+
+### Hidden Attributes
+
+Sensitive fields are hidden from JSON serialization:
+
+```php
+protected $hidden = [
+    'password',
+    'remember_token',
+];
+```
+
+## Soft Deletes
+
+Users are soft-deleted rather than permanently removed from the database:
+
+```php
+$user->delete(); // Soft delete (sets deleted_at)
+$user->restore(); // Restore soft-deleted user
+$user->forceDelete(); // Permanent deletion (rarely used)
+```
+
+Soft deletion preserves:
+- Historical login records
+- Role assignments
+- Audit trail
+- Relationships to other entities
+
+## Query Scopes
+
+The User model uses a custom query builder (`UserBuilder`) with helpful scopes:
+
+```php
+// Find by username (case-insensitive)
+User::whereUsernameEquals('abc123')->first();
+
+// Find by email (case-insensitive)
+User::whereEmailEquals('user@northwestern.edu')->first();
+
+// Retrieve SSO users only
+User::where('auth_type', AuthTypeEnum::SSO)->get();
+```
+
+The `UserBuilder` is defined at `app/Domains/User/QueryBuilders/UserBuilder.php:1`.

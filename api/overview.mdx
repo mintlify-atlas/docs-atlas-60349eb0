@@ -1,0 +1,106 @@
+---
+title: 'API Overview'
+description: 'Comprehensive API capabilities with token-based authentication, request logging, and RFC 9457 error handling'
+---
+
+## Introduction
+
+The Northwestern Laravel Starter provides a production-ready REST API with enterprise-grade features including secure token-based authentication, comprehensive request logging, intelligent rate limiting, and standardized error responses.
+
+## Key Features
+
+### Bearer Token Authentication
+
+API access is secured using HMAC-SHA256 hashed access tokens with support for:
+
+- IP address restrictions (individual IPs or CIDR ranges)
+- Token expiration with automated notifications
+- Usage tracking (last used timestamp, request count, IP address)
+- Token rotation for security compliance
+
+See [Access Token Management](/api/access-tokens) for details.
+
+### Request Logging
+
+All authenticated API requests are logged with comprehensive metadata:
+
+- Request/response details (method, path, status, duration)
+- Performance monitoring (slow request thresholds)
+- Failure tracking with specific failure reasons
+- Configurable sampling for high-throughput applications
+
+See [API Request Logging](/api/request-logging) for configuration options.
+
+### Rate Limiting
+
+Protection against abuse with flexible rate limiting:
+
+- Global API rate limits (per user or IP)
+- Per-endpoint granular controls
+- Configurable time windows (per minute, hour, day)
+- Standard `Retry-After` headers
+
+See [Rate Limiting](/api/rate-limiting) for limits and configuration.
+
+### RFC 9457 Error Handling
+
+Standardized, machine-readable error responses:
+
+- Consistent error structure across all endpoints
+- Problem Details JSON format (RFC 9457)
+- Trace IDs for request correlation
+- Detailed validation error messages
+
+See [Error Handling](/api/error-handling) for error response structure.
+
+## API Configuration
+
+The API can be globally enabled or disabled via configuration:
+
+<ParamField path="API_ENABLED" type="boolean" default="true">
+  Global toggle for all API functionality. When disabled, all API routes return 503 Service Unavailable.
+</ParamField>
+
+<ParamField path="API_AUTH_REALM" type="string" default="{app.name} API">
+  Authentication realm shown in `WWW-Authenticate` headers and token expiration notifications.
+</ParamField>
+
+## Authentication Realm
+
+The API uses Bearer token authentication with a configurable realm identifier. The realm is:
+
+- Included in the `WWW-Authenticate` header for 401 responses
+- Displayed in access token expiration notifications
+- Defaults to your application name followed by "API"
+
+Example `WWW-Authenticate` header:
+
+```http
+WWW-Authenticate: Bearer realm="Northwestern Laravel Starter API"
+```
+
+## Configuration Files
+
+API behavior is controlled through two configuration files:
+
+- **`config/api.php`** - Authentication, logging, and token management settings
+- **`config/rate-limiting.php`** - Rate limit definitions for API and auth endpoints
+
+Both files support environment-based configuration with sensible production defaults.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Access Tokens" icon="key" href="/api/access-tokens">
+    Create and manage API access tokens with IP restrictions
+  </Card>
+  <Card title="Request Logging" icon="list" href="/api/request-logging">
+    Configure request logging, sampling, and retention
+  </Card>
+  <Card title="Rate Limiting" icon="gauge" href="/api/rate-limiting">
+    Understand rate limits and configure thresholds
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/api/error-handling">
+    RFC 9457 error responses and failure reasons
+  </Card>
+</CardGroup>

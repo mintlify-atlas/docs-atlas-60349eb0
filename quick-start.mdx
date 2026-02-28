@@ -1,0 +1,414 @@
+---
+title: Quick Start
+description: Get a working Northwestern Laravel Starter application up and running in minutes
+---
+
+This guide will help you go from a fresh installation to a fully functional application with authentication, user management, and API capabilities.
+
+<Note>
+  Make sure you've completed the [installation](/installation) steps before proceeding.
+</Note>
+
+## Start the Development Server
+
+The starter kit includes a convenient `dev` script that starts all necessary services in parallel:
+
+```bash
+composer dev
+```
+
+This command starts:
+- **Laravel development server** on `http://localhost:8000`
+- **Queue worker** to process background jobs
+- **Laravel Pail** for real-time log tailing
+- **Vite development server** for frontend asset compilation
+
+Alternatively, you can start services individually:
+
+<CodeGroup>
+```bash Laravel Server
+php artisan serve
+```
+
+```bash Queue Worker
+php artisan queue:listen --tries=1
+```
+
+```bash Vite (Frontend)
+pnpm run dev
+```
+
+```bash Logs
+php artisan pail --timeout=0
+```
+</CodeGroup>
+
+## Access the Application
+
+Once the development server is running, visit:
+
+- **Main Application**: http://localhost:8000
+- **Admin Panel**: http://localhost:8000/admin
+
+## Create Your First User
+
+You have several options to create users:
+
+<Tabs>
+  <Tab title="Local Authentication">
+    If `LOCAL_AUTH_ENABLED=true` in your `.env` file, you can create a local user via Artisan:
+
+    ```bash
+    php artisan tinker
+    ```
+
+    Then in the Tinker console:
+
+    ```php
+    use App\Domains\User\Actions\Local\CreateLocalUser;
+    use App\Domains\User\Models\User;
+
+    $user = app(CreateLocalUser::class)->execute(
+        firstName: 'John',
+        lastName: 'Doe',
+        email: 'john.doe@northwestern.edu',
+        username: 'jdoe'
+    );
+    ```
+
+    <Note>
+      Local authentication uses passwordless email verification codes. When you attempt to log in, a verification code will be sent to the email address (or logged in development).
+    </Note>
+  </Tab>
+
+  <Tab title="Database Seeder">
+    The starter includes seeders that create sample users:
+
+    ```bash
+    php artisan db:seed
+    ```
+
+    This creates:
+    - A super administrator user
+    - Sample users with various roles
+    - Default roles and permissions
+    - Sample API tokens
+  </Tab>
+
+  <Tab title="Northwestern Directory">
+    If you have Directory Search API access, users can be auto-provisioned on first login:
+
+    ```bash .env
+    DIRECTORY_SEARCH_API_KEY=your-api-key
+    ```
+
+    When a Northwestern user logs in via Entra ID SSO, their account will be automatically created and synchronized with Directory data.
+  </Tab>
+</Tabs>
+
+## Assign Super Administrator Role
+
+To make a user a super administrator, use the built-in command:
+
+```bash
+php artisan user:make-admin {netid}
+```
+
+Or configure super admins in your `.env` file (they'll be assigned the role automatically):
+
+```bash .env
+SUPER_ADMIN_NETIDS=abc123,xyz789
+```
+
+## Explore the Admin Panel
+
+Log in to the admin panel at http://localhost:8000/admin to access:
+
+<Steps>
+  <Step title="User Management">
+    Navigate to **Users** to view, create, edit, and manage user accounts.
+    
+    Features:
+    - User search and filtering
+    - Bulk operations
+    - Role assignment
+    - User impersonation
+    - Login history
+  </Step>
+
+  <Step title="Roles & Permissions">
+    Navigate to **Roles** to manage your RBAC system.
+    
+    Default roles:
+    - **Super Administrator** - Full system access
+    - **Administrator** - Standard admin access
+    - **User** - Basic user access
+    
+    Create custom roles and assign specific permissions.
+  </Step>
+
+  <Step title="API Access Tokens">
+    If `API_ENABLED=true`, navigate to **API** > **Access Tokens** to manage API authentication.
+    
+    Features:
+    - Create tokens with custom expiration
+    - CIDR-based IP restrictions
+    - Token rotation
+    - Automatic expiration notifications
+  </Step>
+
+  <Step title="API Request Logs">
+    Navigate to **API** > **Request Logs** to view API analytics.
+    
+    Metrics include:
+    - Request volume over time
+    - Response time distribution
+    - Success/failure rates
+    - Top endpoints
+    - Filter by token, endpoint, status, or date range
+  </Step>
+
+  <Step title="Audit Logs">
+    Navigate to **Audit** to view the complete audit trail.
+    
+    Every model change is logged with:
+    - Before/after values
+    - User who made the change
+    - Timestamp
+    - IP address and user agent
+    - Request trace ID
+  </Step>
+
+  <Step title="Login Records">
+    Navigate to **Security** > **Login Records** to monitor authentication activity.
+    
+    Track:
+    - Successful logins
+    - Failed login attempts
+    - Login method (SSO, token, email code)
+    - IP addresses and locations
+    - User agents
+  </Step>
+</Steps>
+
+## Test the API
+
+<Steps>
+  <Step title="Create an API Token">
+    In the admin panel, navigate to **API** > **Access Tokens** and create a new token:
+    
+    1. Click **New Access Token**
+    2. Enter a descriptive name (e.g., "Development Testing")
+    3. Set an expiration date (or leave blank for no expiration)
+    4. Optionally add IP restrictions in CIDR format
+    5. Click **Create**
+    
+    <Warning>
+      Copy the token immediately after creation - it cannot be retrieved later!
+    </Warning>
+  </Step>
+
+  <Step title="Make an API Request">
+    Test the API with a simple request:
+    
+    ```bash
+    curl -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+         http://localhost:8000/api/v1/users
+    ```
+    
+    The API follows RESTful conventions and returns JSON responses:
+    
+    ```json
+    {
+      "data": [
+        {
+          "id": 1,
+          "net_id": "abc123",
+          "first_name": "John",
+          "last_name": "Doe",
+          "email": "john.doe@northwestern.edu",
+          "created_at": "2026-02-28T12:00:00.000000Z",
+          "updated_at": "2026-02-28T12:00:00.000000Z"
+        }
+      ],
+      "links": {...},
+      "meta": {...}
+    }
+    ```
+  </Step>
+
+  <Step title="View Request Logs">
+    Return to the admin panel and navigate to **API** > **Request Logs** to see your request logged with:
+    
+    - Endpoint and HTTP method
+    - Response status code
+    - Response time in milliseconds
+    - Request and response payloads
+    - Token used for authentication
+  </Step>
+</Steps>
+
+## Test User Impersonation
+
+User impersonation allows administrators to troubleshoot issues by viewing the application as another user:
+
+<Steps>
+  <Step title="Navigate to Users">
+    In the admin panel, go to **Users** and find the user you want to impersonate.
+  </Step>
+
+  <Step title="Start Impersonation">
+    Click the three-dot menu on the user row and select **Impersonate**.
+    
+    You'll be redirected to the application as that user, with a banner indicating you're impersonating.
+  </Step>
+
+  <Step title="Stop Impersonation">
+    Click **Stop Impersonating** in the banner to return to your own account.
+    
+    All impersonation sessions are logged in the `impersonation_logs` table for security auditing.
+  </Step>
+</Steps>
+
+<Warning>
+  Impersonation is a powerful feature. Ensure only trusted administrators have the `impersonate users` permission.
+</Warning>
+
+## Run the Test Suite
+
+Verify everything is working by running the test suite:
+
+<CodeGroup>
+```bash PHPUnit (Parallel)
+php artisan test --parallel
+```
+
+```bash PHPUnit (Sequential)
+php artisan test
+```
+
+```bash Cypress (Interactive)
+pnpm run test:e2e
+```
+
+```bash Cypress (Headless)
+pnpm run test:e2e:headless
+```
+</CodeGroup>
+
+<Note>
+  The test suite uses the `DB_PHPUNIT_DATABASE` database defined in your `.env` file to avoid affecting your development data.
+</Note>
+
+## Explore Key Features
+
+### Database Snapshots
+
+The starter includes schema-validated database snapshots for rapid development:
+
+```bash
+# Create a snapshot of current database state
+php artisan snapshot:create my-snapshot
+
+# List all snapshots
+php artisan snapshot:list
+
+# Load a snapshot
+php artisan snapshot:load my-snapshot
+
+# Delete a snapshot
+php artisan snapshot:delete my-snapshot
+```
+
+### Health Checks
+
+Monitor your application health:
+
+```bash
+php artisan health:check
+```
+
+Health checks monitor:
+- Database connectivity
+- Cache functionality
+- Queue processing
+- Storage accessibility
+- Security advisories
+- Application configuration
+
+### Telescope (Debug Assistant)
+
+Laravel Telescope is available in local environments at http://localhost:8000/telescope
+
+Monitor:
+- Requests
+- Commands
+- Jobs
+- Database queries
+- Cache operations
+- Redis commands
+- Mail
+- Notifications
+
+## Development Workflow
+
+The starter includes several helpful Composer scripts:
+
+<CodeGroup>
+```bash Format PHP Code
+composer format:php
+```
+
+```bash Analyze PHP Code
+composer analyse:php
+```
+
+```bash Format Frontend Code
+composer format:frontend
+```
+
+```bash Run Rector Refactoring
+composer rector
+```
+
+```bash Generate IDE Helpers
+composer ide-helper:generate
+```
+
+```bash Run All Code Quality Tools
+composer all
+```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Project Structure"
+    icon="folder-tree"
+    href="/project-structure"
+  >
+    Understand the domain-driven architecture
+  </Card>
+  <Card
+    title="Configuration"
+    icon="gear"
+    href="/configuration"
+  >
+    Learn about all configuration options
+  </Card>
+  <Card
+    title="Authentication"
+    icon="lock"
+    href="/authentication"
+  >
+    Configure SSO, tokens, and local auth
+  </Card>
+  <Card
+    title="API Development"
+    icon="code"
+    href="/api-development"
+  >
+    Build RESTful APIs with the starter
+  </Card>
+</CardGroup>

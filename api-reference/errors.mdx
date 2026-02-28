@@ -1,0 +1,761 @@
+---
+title: 'Error Responses'
+description: 'RFC 9457 Problem Details format with trace IDs, validation errors, and detailed failure reasons'
+---
+
+## Overview
+
+All API errors return standardized [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457) responses with consistent structure, machine-readable error types, and trace IDs for request correlation.
+
+## RFC 9457 Problem Details
+
+Problem Details provides a standardized error response format for HTTP APIs:
+
+- **Consistent structure** across all error types
+- **Machine-readable** error types for automated handling
+- **Human-readable** titles and details for debugging
+- **Extensible** with custom fields like trace IDs and validation errors
+
+**Specification:** [RFC 9457 - Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc9457)
+
+**Implementation:** `app/Domains/Core/Exceptions/ProblemDetailsRenderer.php:48`
+
+## Error Response Structure
+
+All error responses follow this structure:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Authentication failed",
+  "instance": "/api/v1/me",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+### Core Fields
+
+<ResponseField name="type" type="string" required>
+  URI reference identifying the problem type. Defaults to `"about:blank"` which indicates the title is the error description.
+</ResponseField>
+
+<ResponseField name="title" type="string" required>
+  Short, human-readable summary. Should **not change** between occurrences of the same error type.
+</ResponseField>
+
+<ResponseField name="status" type="integer" required>
+  HTTP status code (advisory; included for client convenience).
+</ResponseField>
+
+<ResponseField name="detail" type="string">
+  Human-readable explanation specific to this occurrence. Should help the client correct the problem.
+</ResponseField>
+
+<ResponseField name="instance" type="string" required>
+  URI reference identifying this specific occurrence. Defaults to the request path.
+</ResponseField>
+
+### Extension Fields
+
+<ResponseField name="trace_id" type="uuid">
+  Unique identifier for request correlation. Links to API request logs for troubleshooting.
+  
+  Only present if the request reached the authentication middleware. Framework-level errors (404, 405) may not have a trace ID.
+</ResponseField>
+
+<ResponseField name="errors" type="object">
+  Validation errors keyed by field name (only present for 422 Unprocessable Entity responses).
+  
+  ```json
+  "errors": {
+    "name": ["The name field is required."],
+    "expires_at": ["The expires at must be at least 24 hours from now."]
+  }
+  ```
+</ResponseField>
+
+## Response Headers
+
+### Content-Type
+
+All error responses use the RFC 9457 media type:
+
+```http
+Content-Type: application/problem+json
+```
+
+**Implementation:** `app/Http/Responses/ProblemDetails.php:102`
+
+### WWW-Authenticate (401 Only)
+
+Unauthorized responses include authentication realm:
+
+```http
+WWW-Authenticate: Bearer realm="Northwestern Laravel Starter API"
+```
+
+**Implementation:** `app/Http/Responses/ProblemDetails.php:140`
+
+### Retry-After (429 and 503)
+
+Rate limit and service unavailable responses include retry duration (in seconds):
+
+```http
+Retry-After: 60
+```
+
+**Implementation:** `app/Http/Responses/ProblemDetails.php:188`
+
+### Allow (405 Only)
+
+Method not allowed responses list permitted HTTP methods:
+
+```http
+Allow: GET, POST, DELETE
+```
+
+**Implementation:** `app/Http/Responses/ProblemDetails.php:235`
+
+## HTTP Status Codes
+
+The API uses standard HTTP status codes with RFC 9457 error bodies:
+
+### 400 Bad Request
+
+Malformed request that cannot be processed.
+
+```bash
+curl -X POST "{baseUrl}/api/v1/me/tokens" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{invalid json}'
+```
+
+<ResponseExample>
+```json
+{
+  "type": "about:blank",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "The request could not be understood by the server.",
+  "instance": "/api/v1/me/tokens",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+</ResponseExample>
+
+**Common causes:**
+- Invalid JSON syntax
+- Invalid argument types
+- Malformed request headers
+
+**Implementation:** `ProblemDetailsRenderer.php:96`
+
+### 401 Unauthorized
+
+Authentication failed or missing.
+
+```bash
+curl -X GET "{baseUrl}/api/v1/me" \
+  -H "Authorization: Bearer invalid_token" \
+  -H "Accept: application/json"
+```
+
+<ResponseExample>
+```json
+{
+  "type": "about:blank",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Authentication failed",
+  "instance": "/api/v1/me",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+**Response headers:**
+```http
+WWW-Authenticate: Bearer realm="Northwestern Laravel Starter API"
+```
+</ResponseExample>
+
+See [Authentication Errors](/api-reference/authentication#authentication-errors) for specific failure reasons.
+
+**Implementation:** `ProblemDetailsRenderer.php:67`
+
+### 403 Forbidden
+
+Authenticated but lacks permission to access the resource.
+
+```bash
+# Attempting to delete another user's token
+curl -X DELETE "{baseUrl}/api/v1/me/tokens/999" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json"
+```
+
+<ResponseExample>
+```json
+{
+  "type": "about:blank",
+  "title": "Forbidden",
+  "status": 403,
+  "detail": "You do not have permission to access this resource.",
+  "instance": "/api/v1/me/tokens/999",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+</ResponseExample>
+
+**Common causes:**
+- Insufficient permissions or roles
+- Attempting to access another user's resources
+- Authorization policy failures
+
+**Failure reason:** `unauthorized`
+
+**Implementation:** `ProblemDetailsRenderer.php:69`
+
+### 404 Not Found
+
+Resource does not exist.
+
+```bash
+curl -X GET "{baseUrl}/api/v1/me/tokens/999" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json"
+```
+
+<ResponseExample>
+```json
+{
+  "type": "about:blank",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Resource not found",
+  "instance": "/api/v1/me/tokens/999",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+</ResponseExample>
+
+<Note>
+  404 errors for invalid routes may not include a `trace_id` if the route doesn't exist in the application router.
+</Note>
+
+**Implementation:** `ProblemDetailsRenderer.php:79`
+
+### 405 Method Not Allowed
+
+HTTP method not supported for this endpoint.
+
+```bash
+# GET /api/v1/me only supports GET
+curl -X POST "{baseUrl}/api/v1/me" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json"
+```
+
+<ResponseExample>
+```json
+{
+  "type": "about:blank",
+  "title": "Method Not Allowed",
+  "status": 405,
+  "detail": "The HTTP method used is not supported for this endpoint.",
+  "instance": "/api/v1/me"
+}
+```
+
+**Response headers:**
+```http
+Allow: GET
+```
+</ResponseExample>
+
+**Implementation:** `ProblemDetailsRenderer.php:90`
+
+### 409 Conflict
+
+Request conflicts with current resource state.
+
+```bash
+# Creating token with duplicate name
+curl -X POST "{baseUrl}/api/v1/me/tokens" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Existing Token Name"}'
+```
+
+<ResponseExample>
+```json
+{
+  "type": "about:blank",
+  "title": "Conflict",
+  "status": 409,
+  "detail": "A token with this name already exists.",
+  "instance": "/api/v1/me/tokens",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+</ResponseExample>
+
+**Common causes:**
+- Unique constraint violations
+- Version conflicts
+- Stale update attempts
+
+**Failure reason:** `conflict`
+
+**Implementation:** `ProblemDetailsRenderer.php:82`
+
+### 413 Payload Too Large
+
+Request body exceeds configured size limits.
+
+```bash
+curl -X POST "{baseUrl}/api/v1/me/tokens" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  --data-binary @huge_file.json
+```
+
+<ResponseExample>
+```json
+{
+  "type": "about:blank",
+  "title": "Payload Too Large",
+  "status": 413,
+  "detail": "Payload too large",
+  "instance": "/api/v1/me/tokens"
+}
+```
+</ResponseExample>
+
+**Implementation:** `ProblemDetailsRenderer.php:105`
+
+### 422 Unprocessable Entity
+
+Validation failed. Response includes field-specific error messages.
+
+```bash
+curl -X POST "{baseUrl}/api/v1/me/tokens" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "",
+    "expires_at": "2020-01-01",
+    "allowed_ips": ["invalid-ip"]
+  }'
+```
+
+<ResponseExample>
+```json
+{
+  "type": "about:blank",
+  "title": "Unprocessable Entity",
+  "status": 422,
+  "detail": "Validation failed",
+  "instance": "/api/v1/me/tokens",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f",
+  "errors": {
+    "name": [
+      "The name field is required."
+    ],
+    "expires_at": [
+      "The expires at must be at least 24 hours from now."
+    ],
+    "allowed_ips.0": [
+      "The allowed IP address is not a valid IP address or CIDR range."
+    ]
+  }
+}
+```
+</ResponseExample>
+
+The `errors` object contains field-specific validation messages. Array field errors use dot notation (e.g., `allowed_ips.0` for the first array element).
+
+**Failure reason:** `validation-failed`
+
+**Implementation:** `ProblemDetailsRenderer.php:61`
+
+### 429 Too Many Requests
+
+[Rate limit](/api/rate-limiting) exceeded.
+
+```bash
+# After exceeding 60 requests per minute
+curl -X GET "{baseUrl}/api/v1/me" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json"
+```
+
+<ResponseExample>
+```json
+{
+  "type": "about:blank",
+  "title": "Too Many Requests",
+  "status": 429,
+  "detail": "Too many requests. Please try again later.",
+  "instance": "/api/v1/me",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+**Response headers:**
+```http
+Retry-After: 60
+```
+</ResponseExample>
+
+The `Retry-After` header indicates seconds until the rate limit resets.
+
+**Implementation:** `ProblemDetailsRenderer.php:108`
+
+### 500 Internal Server Error
+
+Unexpected server-side error.
+
+```bash
+curl -X GET "{baseUrl}/api/v1/me" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json"
+```
+
+<ResponseExample>
+```json
+{
+  "type": "about:blank",
+  "title": "Internal Server Error",
+  "status": 500,
+  "detail": "An unexpected error occurred",
+  "instance": "/api/v1/me",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+</ResponseExample>
+
+<Warning>
+  In production, error details are generic to avoid leaking sensitive information. Use trace IDs to find detailed errors in application logs and monitoring systems.
+</Warning>
+
+**Common causes:**
+- Unhandled exceptions
+- Database connectivity issues
+- External service failures
+
+**Failure reason:** `server-error` or `database-error`
+
+**Implementation:** `ProblemDetailsRenderer.php:136`
+
+### 503 Service Unavailable
+
+API temporarily disabled via configuration.
+
+```bash
+# When API_ENABLED=false
+curl -X GET "{baseUrl}/api/v1/me" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json"
+```
+
+<ResponseExample>
+```json
+{
+  "type": "about:blank",
+  "title": "Service Unavailable",
+  "status": 503,
+  "detail": "Service temporarily unavailable",
+  "instance": "/api/v1/me"
+}
+```
+
+**Response headers:**
+```http
+Retry-After: 3600
+```
+</ResponseExample>
+
+**Common causes:**
+- `API_ENABLED=false` in configuration
+- Maintenance mode
+- Infrastructure issues
+
+**Implementation:** `ProblemDetailsRenderer.php:115`
+
+## Failure Reasons
+
+The system tracks specific failure reasons for errors. These are stored in [request logs](/api/request-logging) and help with debugging and security monitoring.
+
+### Authentication Failures
+
+| Failure Reason | Description | HTTP Status | Implementation |
+|----------------|-------------|-------------|----------------|
+| `invalid-header-format` | Authorization header missing or not prefixed with "Bearer " | 401 | `AuthenticatesAccessTokens.php:55` |
+| `missing-credentials` | Authorization header has "Bearer " but no token provided | 401 | `AuthenticatesAccessTokens.php:60` |
+| `token-invalid-or-expired` | Token not found, expired, or associated user is inactive | 401 | `AuthenticatesAccessTokens.php:74` |
+| `ip-denied` | Client IP does not match token's `allowed_ips` configuration | 401 | `AuthenticatesAccessTokens.php:83` |
+
+### Application Failures
+
+| Failure Reason | Description | HTTP Status | Implementation |
+|----------------|-------------|-------------|----------------|
+| `validation-failed` | Request payload failed validation rules | 422 | `ProblemDetailsRenderer.php:61` |
+| `unauthorized` | Missing or invalid permissions for resource | 403 | `ProblemDetailsRenderer.php:75` |
+| `conflict` | Request conflicts with current resource state | 409 | `ProblemDetailsRenderer.php:86` |
+| `database-error` | Database connectivity or constraint violation | 500 | `ProblemDetailsRenderer.php:128` |
+| `server-error` | Unexpected server-side error | 500 | `ProblemDetailsRenderer.php:138` |
+
+**Implementation:** `app/Domains/Core/Enums/ApiRequestFailureEnum.php`
+
+These reasons are:
+- Logged in the `api_request_logs` table with the trace ID
+- Used for security monitoring and anomaly detection
+- Viewable in the admin UI for troubleshooting
+- Not exposed to API clients (internal use only)
+
+## Trace IDs
+
+Every authenticated API request receives a unique trace ID (UUID v4):
+
+```json
+{
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+**Implementation:** `app/Domains/Auth/Http/Middleware/AuthenticatesAccessTokens.php:50`
+
+Trace IDs are:
+
+- **Generated** at the start of authentication middleware
+- **Included** in error response bodies
+- **Stored** in API request logs for correlation
+- **Used** for troubleshooting and support requests
+
+<Info>
+  Framework-level errors (404 for non-existent routes, 405 for wrong methods) may not have trace IDs because they occur before the authentication middleware runs.
+</Info>
+
+## When Problem Details Apply
+
+RFC 9457 responses are returned for:
+
+- All routes under `/api/*` prefix
+- Any request with `Accept: application/json` header
+- Any request that calls `$request->wantsJson()`
+
+**Implementation:** `app/Domains/Core/Exceptions/ProblemDetailsRenderer.php:55`
+
+```php
+if (! $request->is('api/*') && ! $request->wantsJson()) {
+    return null; // Let web error handler process
+}
+```
+
+Web routes receive standard HTML error pages instead of Problem Details JSON.
+
+## Client Error Handling
+
+### Example: Python
+
+```python
+import requests
+
+def make_api_request(url, token):
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json"
+    }
+    
+    response = requests.get(url, headers=headers)
+    
+    if not response.ok:
+        error = response.json()
+        print(f"Error {error['status']}: {error['title']}")
+        print(f"Detail: {error.get('detail', 'No additional details')}")
+        print(f"Trace ID: {error.get('trace_id', 'N/A')}")
+        
+        # Handle validation errors
+        if error['status'] == 422 and 'errors' in error:
+            print("Validation errors:")
+            for field, messages in error['errors'].items():
+                print(f"  {field}: {', '.join(messages)}")
+        
+        # Respect rate limits
+        if error['status'] == 429:
+            retry_after = response.headers.get('Retry-After', 60)
+            print(f"Rate limited. Retry after {retry_after} seconds")
+    
+    return response
+```
+
+### Example: JavaScript
+
+```javascript
+async function makeApiRequest(url, token) {
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json'
+    }
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    console.error(`Error ${error.status}: ${error.title}`);
+    console.error(`Detail: ${error.detail || 'No additional details'}`);
+    console.error(`Trace ID: ${error.trace_id || 'N/A'}`);
+    
+    // Handle validation errors
+    if (error.status === 422 && error.errors) {
+      console.error('Validation errors:');
+      for (const [field, messages] of Object.entries(error.errors)) {
+        console.error(`  ${field}: ${messages.join(', ')}`);
+      }
+    }
+    
+    // Respect rate limits
+    if (error.status === 429) {
+      const retryAfter = response.headers.get('Retry-After') || 60;
+      console.error(`Rate limited. Retry after ${retryAfter} seconds`);
+    }
+  }
+  
+  return response;
+}
+```
+
+### Example: cURL with Error Handling
+
+```bash
+#!/bin/bash
+
+RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "{baseUrl}/api/v1/me" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json")
+
+HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+BODY=$(echo "$RESPONSE" | sed '$d')
+
+if [ $HTTP_STATUS -ne 200 ]; then
+  echo "Error occurred (HTTP $HTTP_STATUS):"
+  echo "$BODY" | jq '.'
+  
+  # Extract trace ID for support
+  TRACE_ID=$(echo "$BODY" | jq -r '.trace_id // "N/A"')
+  echo "Trace ID: $TRACE_ID"
+  
+  exit 1
+fi
+
+echo "$BODY" | jq '.'
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always check HTTP status codes first">
+    Don't rely solely on title or type fields. HTTP status codes are the primary indicator of response success or failure. Use them for control flow in your client.
+  </Accordion>
+
+  <Accordion title="Store trace IDs for support requests">
+    When reporting errors to support teams, always include the `trace_id`. This allows quick lookup of the exact request in logs and monitoring systems.
+  </Accordion>
+
+  <Accordion title="Handle validation errors gracefully">
+    Parse the `errors` object for 422 responses and display field-specific messages to users. Don't show generic "validation failed" messages.
+  </Accordion>
+
+  <Accordion title="Respect Retry-After headers">
+    For 429 (rate limit) and 503 (unavailable) responses, implement exponential backoff using the `Retry-After` header value.
+  </Accordion>
+
+  <Accordion title="Don't parse detail messages for logic">
+    Error `detail` messages are for humans. Use HTTP status codes and failure reasons (from logs) for programmatic decisions.
+  </Accordion>
+
+  <Accordion title="Log errors with trace IDs">
+    When logging errors in your client application, include the trace ID. This enables end-to-end request tracing across systems.
+  </Accordion>
+</AccordionGroup>
+
+## Implementation Details
+
+### Exception Mapping
+
+The `ProblemDetailsRenderer` class maps Laravel exceptions to RFC 9457 responses using pattern matching:
+
+**Implementation:** `app/Domains/Core/Exceptions/ProblemDetailsRenderer.php:53`
+
+```php
+public function render(Throwable $e, Request $request): ?JsonResponse
+{
+    return match (true) {
+        $e instanceof ValidationException => 
+            ProblemDetails::unprocessableEntity(errors: $e->errors()),
+        
+        $e instanceof AuthenticationException => 
+            ProblemDetails::unauthorized(),
+        
+        $e instanceof ThrottleRequestsException => 
+            ProblemDetails::tooManyRequests(
+                retryAfter: $e->getHeaders()['Retry-After'] ?? 60
+            ),
+        
+        $e instanceof PDOException => 
+            ProblemDetails::internalServerError(
+                detail: 'A database error occurred while processing the request.'
+            ),
+        
+        default => 
+            ProblemDetails::internalServerError(),
+    };
+}
+```
+
+### Response Builder
+
+The `ProblemDetails` class provides convenience methods for common responses:
+
+**Implementation:** `app/Http/Responses/ProblemDetails.php:77`
+
+```php
+public static function response(
+    int $status,
+    string $title,
+    ?string $detail = null,
+    string $type = 'about:blank',
+    ?string $instance = null,
+    array $extensions = [],
+    array $headers = []
+): JsonResponse {
+    $extensions = self::withTraceId($extensions);
+    
+    $body = array_merge(
+        ['type' => $type, 'title' => $title, 'status' => $status],
+        $detail ? ['detail' => $detail] : [],
+        ['instance' => $instance ?? request()->getRequestUri()],
+        $extensions
+    );
+    
+    return response()->json(
+        $body,
+        $status,
+        array_merge(['Content-Type' => 'application/problem+json'], $headers)
+    );
+}
+```
+
+## Related Documentation
+
+- [Authentication](/api-reference/authentication) - Authentication failure reasons and error handling
+- [API Overview](/api-reference/overview) - Base URL and API configuration
+- [Request Logging](/api/request-logging) - Error responses are always logged with trace IDs
+- [Rate Limiting](/api/rate-limiting) - 429 error responses and retry behavior

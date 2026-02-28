@@ -1,0 +1,240 @@
+---
+title: 'User'
+description: 'Retrieve information about the authenticated API user'
+---
+
+## Get authenticated user details
+
+<api-endpoint method="GET" path="/api/v1/me" />
+
+Retrieve profile information for the currently authenticated user.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+  
+  ```
+  Authorization: Bearer YOUR_ACCESS_TOKEN
+  ```
+</ParamField>
+
+### Response
+
+<ResponseField name="data" type="object">
+  The authenticated user's profile information
+  
+  <Expandable title="User Object">
+    <ResponseField name="id" type="integer">
+      Unique identifier for the user
+    </ResponseField>
+    
+    <ResponseField name="username" type="string">
+      User's NetID or username
+    </ResponseField>
+    
+    <ResponseField name="auth_type" type="string">
+      Authentication method used by the user. Possible values: `sso`, `local`, `api`
+    </ResponseField>
+    
+    <ResponseField name="first_name" type="string">
+      User's first name
+    </ResponseField>
+    
+    <ResponseField name="last_name" type="string">
+      User's last name
+    </ResponseField>
+    
+    <ResponseField name="full_name" type="string">
+      User's full name (concatenation of first and last name)
+    </ResponseField>
+    
+    <ResponseField name="email" type="string | null">
+      User's email address
+    </ResponseField>
+    
+    <ResponseField name="primary_affiliation" type="string | null">
+      Primary Northwestern affiliation. Possible values: `student`, `faculty`, `staff`, `affiliate`, `other`, `not-matched`
+    </ResponseField>
+    
+    <ResponseField name="departments" type="array">
+      List of departments the user belongs to
+    </ResponseField>
+    
+    <ResponseField name="job_titles" type="array">
+      List of job titles for the user
+    </ResponseField>
+    
+    <ResponseField name="created_at" type="string | null">
+      ISO 8601 timestamp when the user was created
+    </ResponseField>
+    
+    <ResponseField name="updated_at" type="string | null">
+      ISO 8601 timestamp when the user was last updated
+    </ResponseField>
+    
+    <ResponseField name="roles" type="array | null">
+      Array of roles assigned to the user (only included when roles are loaded)
+      
+      <Expandable title="Role Object">
+        <ResponseField name="id" type="integer">
+          Role identifier
+        </ResponseField>
+        
+        <ResponseField name="name" type="string">
+          Role name
+        </ResponseField>
+        
+        <ResponseField name="role_type" type="object">
+          <Expandable title="Properties">
+            <ResponseField name="slug" type="string">
+              Role type slug (e.g., `api-integration`)
+            </ResponseField>
+            
+            <ResponseField name="label" type="string">
+              Human-readable role type label
+            </ResponseField>
+          </Expandable>
+        </ResponseField>
+        
+        <ResponseField name="created_at" type="string">
+          ISO 8601 timestamp when the role was created
+        </ResponseField>
+        
+        <ResponseField name="updated_at" type="string">
+          ISO 8601 timestamp when the role was last updated
+        </ResponseField>
+        
+        <ResponseField name="permissions" type="array">
+          Array of permissions granted by this role
+          
+          <Expandable title="Permission Object">
+            <ResponseField name="id" type="integer">
+              Permission identifier
+            </ResponseField>
+            
+            <ResponseField name="name" type="string">
+              Permission slug (e.g., `view-users`)
+            </ResponseField>
+            
+            <ResponseField name="label" type="string">
+              Human-readable permission label
+            </ResponseField>
+            
+            <ResponseField name="description" type="string">
+              Detailed description of what the permission allows
+            </ResponseField>
+            
+            <ResponseField name="scope" type="string">
+              Permission scope (e.g., `system-wide`)
+            </ResponseField>
+            
+            <ResponseField name="system_managed" type="boolean">
+              Whether this permission is managed by the system
+            </ResponseField>
+            
+            <ResponseField name="api_relevant" type="boolean">
+              Whether this permission applies to API operations
+            </ResponseField>
+            
+            <ResponseField name="created_at" type="string">
+              ISO 8601 timestamp when the permission was created
+            </ResponseField>
+            
+            <ResponseField name="updated_at" type="string">
+              ISO 8601 timestamp when the permission was last updated
+            </ResponseField>
+          </Expandable>
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X GET https://example.edu/api/v1/me \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Accept: application/json"
+```
+
+```python Python
+import requests
+
+url = "https://example.edu/api/v1/me"
+headers = {
+    "Authorization": "Bearer YOUR_ACCESS_TOKEN",
+    "Accept": "application/json"
+}
+
+response = requests.get(url, headers=headers)
+print(response.json())
+```
+
+```javascript JavaScript
+fetch('https://example.edu/api/v1/me', {
+  method: 'GET',
+  headers: {
+    'Authorization': 'Bearer YOUR_ACCESS_TOKEN',
+    'Accept': 'application/json'
+  }
+})
+.then(response => response.json())
+.then(data => console.log(data));
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 - Success
+{
+  "data": {
+    "id": 1,
+    "username": "waw1234",
+    "auth_type": "api",
+    "first_name": "NUIT",
+    "last_name": "API",
+    "full_name": "NUIT API",
+    "email": null,
+    "primary_affiliation": "not-matched",
+    "departments": [],
+    "job_titles": [],
+    "created_at": "2025-11-06T15:20:00+00:00",
+    "updated_at": "2025-04-09T18:45:10+00:00",
+    "roles": [
+      {
+        "id": 1,
+        "name": "API Role",
+        "role_type": {
+          "slug": "api-integration",
+          "label": "API Integration"
+        },
+        "created_at": "2025-11-06T15:20:00+00:00",
+        "updated_at": "2025-11-06T15:20:00+00:00",
+        "permissions": [
+          {
+            "id": 1,
+            "name": "view-users",
+            "label": "View Users",
+            "description": "Allows viewing all user profiles and their details.",
+            "scope": "system-wide",
+            "system_managed": false,
+            "api_relevant": true,
+            "created_at": "2025-11-06T15:20:00+00:00",
+            "updated_at": "2025-11-06T15:20:00+00:00"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+```json 401 - Unauthorized
+{
+  "type": "https://example.edu/problems/unauthorized",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Missing or invalid bearer token."
+}
+```
+</ResponseExample>

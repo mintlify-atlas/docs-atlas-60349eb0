@@ -1,0 +1,254 @@
+---
+title: Architecture Overview
+description: Understanding the architectural foundation of Northwestern Laravel Starter
+---
+
+The Northwestern Laravel Starter is built on a robust architectural foundation that emphasizes maintainability, testability, and scalability. This page provides an overview of the core architectural principles and patterns used throughout the project.
+
+## Architectural Principles
+
+The starter kit follows several key architectural principles:
+
+<CardGroup cols={2}>
+  <Card title="Domain-Driven Design" icon="cube">
+    Code is organized by business domains rather than technical layers, improving modularity and maintainability.
+  </Card>
+  <Card title="Single Responsibility" icon="bullseye">
+    Classes and methods have focused, well-defined purposes, making the codebase easier to understand and test.
+  </Card>
+  <Card title="Dependency Injection" icon="plug">
+    Dependencies are injected rather than instantiated, enabling loose coupling and easier testing.
+  </Card>
+  <Card title="Interface Segregation" icon="shapes">
+    Contracts define clear boundaries between components, allowing for flexible implementations.
+  </Card>
+</CardGroup>
+
+## Directory Structure
+
+The application follows a domain-driven structure within the `app/Domains/` directory:
+
+```
+app/Domains/
+├── Auth/          # Authentication and authorization
+├── Core/          # Shared utilities and services
+├── Foundation/    # Base application concerns
+├── Support/       # Support ticket system
+└── User/          # User management and profiles
+```
+
+Each domain is self-contained with its own:
+
+- **Models** - Eloquent models representing domain entities
+- **Actions** - Single-purpose classes encapsulating business logic
+- **Http** - Controllers, requests, resources, and middleware
+- **Enums** - Type-safe enumeration classes
+- **Contracts** - Interfaces defining component boundaries
+- **Jobs** - Asynchronous queue-based operations
+- **Events/Listeners** - Event-driven behavior
+- **Policies** - Authorization rules
+- **Seeders** - Database seeding logic
+
+## Key Architectural Patterns
+
+### Action Pattern
+
+Business logic is encapsulated in single-purpose Action classes that can be reused across controllers, jobs, and other components.
+
+```php app/Domains/User/Actions/RecordLogin.php
+readonly class RecordLogin
+{
+    public function __construct(
+        private DetermineUserSegment $determineUserSegment,
+    ) {}
+
+    public function __invoke(User $user, Request $request): void
+    {
+        $user->login_records()->create([
+            'logged_in_at' => now(),
+            'segment' => ($this->determineUserSegment)($user),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+    }
+}
+```
+
+Learn more about the [Actions Pattern](/architecture/actions-pattern).
+
+### Repository Pattern (Selective)
+
+While not used everywhere, repositories are employed for complex data access logic that goes beyond simple Eloquent queries:
+
+```php app/Domains/Support/Repositories/SupportTicketRepository.php
+class SupportTicketRepository
+{
+    public function updatePostStatus(
+        SupportTicket $ticket, 
+        TicketResult $result
+    ): SupportTicket {
+        // Complex persistence logic
+    }
+}
+```
+
+### Gateway Pattern
+
+External service integrations use the Gateway pattern with contracts for flexibility:
+
+```php
+interface TicketSystemGateway
+{
+    public function create(SupportTicket $ticket): TicketResult;
+}
+
+class TeamDynamixGateway implements TicketSystemGateway { ... }
+class MailGateway implements TicketSystemGateway { ... }
+```
+
+## Service Container & Dependency Injection
+
+The application leverages Laravel's service container for dependency injection. Key bindings are registered in `AppServiceProvider`:
+
+```php app/Providers/AppServiceProvider.php
+public function register(): void
+{
+    // Bind interface to implementation
+    $this->app->singleton(
+        OneTimeCodeGenerator::class,
+        config('local-auth.use_fixed_code')
+            ? FixedNumericOneTimeCodeGenerator::class
+            : RandomNumericOneTimeCodeGenerator::class,
+    );
+
+    // Bind concrete classes
+    $this->app->singleton(ProblemDetailsRenderer::class);
+}
+```
+
+This enables:
+- **Testability** - Mock dependencies in tests
+- **Flexibility** - Swap implementations based on configuration
+- **Clarity** - Explicit dependencies in constructors
+
+## Authorization Architecture
+
+Authorization is implemented at multiple levels:
+
+### Gate-Level Super Admin Bypass
+
+Users with `MANAGE_ALL` permission bypass all authorization checks:
+
+```php app/Providers/AppServiceProvider.php
+Gate::before(static function (User $user): ?true {
+    return $user->hasPermissionTo(PermissionEnum::MANAGE_ALL) ? true : null;
+});
+```
+
+### Policy-Based Authorization
+
+Model-specific authorization rules are defined in policy classes:
+
+```php
+class RolePolicy
+{
+    public function update(User $user, Role $role): bool
+    {
+        return !$role->isSystemManagedType() 
+            && $user->hasPermissionTo(PermissionEnum::MANAGE_ROLES);
+    }
+}
+```
+
+### Model-Level Authorization Helpers
+
+Models can define their own authorization logic:
+
+```php app/Domains/Auth/Models/Role.php
+public function canBeManaged(?User $user = null): bool
+{
+    $user ??= auth()->user();
+
+    if ($this->isSystemManagedType()) {
+        return $user->hasPermissionTo(PermissionEnum::MANAGE_ALL);
+    }
+
+    return $user->hasPermissionTo(PermissionEnum::ASSIGN_ROLES);
+}
+```
+
+## Database Architecture
+
+### Eloquent Models with Concerns
+
+Models use traits (concerns) for shared behavior:
+
+```php
+class Role extends SpatieRole implements Auditable
+{
+    use AuditableConcern;        // Automatic audit logging
+    use AuditsPermissions;        // Permission change tracking
+    use HasFactory;               // Factory support
+    use SoftDeletes;              // Soft deletion
+}
+```
+
+### Query Builders
+
+Complex queries are encapsulated in custom query builder classes:
+
+```
+app/Domains/User/QueryBuilders/
+└── UserQueryBuilder.php
+```
+
+## Configuration Architecture
+
+See the [Configuration System](/architecture/configuration) page for detailed information about how configuration is structured and validated.
+
+## Testing Strategy
+
+The architecture supports comprehensive testing:
+
+- **Unit Tests** - Test individual actions and services in isolation
+- **Feature Tests** - Test full request/response cycles
+- **Integration Tests** - Test interactions between components
+- **End-to-End Tests** - Cypress tests for critical user flows
+
+The Action pattern particularly shines in testing, as business logic can be tested independently of HTTP concerns.
+
+## Error Handling
+
+Errors follow RFC 9457 Problem Details standard for API responses:
+
+```php app/Domains/Core/Exceptions/ProblemDetailsRenderer.php
+class ProblemDetailsRenderer
+{
+    public function render(Throwable $e): JsonResponse
+    {
+        return response()->json([
+            'type' => 'about:blank',
+            'title' => 'Internal Server Error',
+            'status' => 500,
+            'detail' => $e->getMessage(),
+        ], 500);
+    }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Domain-Driven Design" icon="sitemap" href="/architecture/domain-driven-design">
+    Learn how domains are organized and structured
+  </Card>
+  <Card title="Actions Pattern" icon="bolt" href="/architecture/actions-pattern">
+    Understand how business logic is encapsulated
+  </Card>
+  <Card title="Configuration" icon="gear" href="/architecture/configuration">
+    Explore the configuration system
+  </Card>
+  <Card title="Development Guide" icon="code" href="/development">
+    Start building with the starter kit
+  </Card>
+</CardGroup>

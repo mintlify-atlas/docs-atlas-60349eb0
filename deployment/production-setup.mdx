@@ -1,0 +1,249 @@
+---
+title: Production Setup
+description: Complete guide for deploying Northwestern Laravel Starter to production
+---
+
+## Overview
+
+This guide covers the essential steps for deploying Northwestern Laravel Starter to a production environment. The application is built on Laravel and requires careful configuration of environment variables, database connections, and third-party services.
+
+## Prerequisites
+
+- PHP 8.2 or higher
+- PostgreSQL 14 or higher
+- Redis server for caching and queues
+- MinIO or AWS S3 for object storage
+- Web server (Apache/Nginx)
+- SSL certificate for HTTPS
+
+## Initial Setup
+
+### 1. Application Configuration
+
+Set the core application environment variables:
+
+<ParamField path="APP_ENV" type="string" required>
+  Set to `production` to enable production mode
+</ParamField>
+
+<ParamField path="APP_KEY" type="string" required>
+  Application encryption key. Generate using `php artisan key:generate`
+</ParamField>
+
+<ParamField path="APP_DEBUG" type="boolean" required>
+  **Must be set to `false` in production** to prevent sensitive information exposure
+</ParamField>
+
+<ParamField path="APP_URL" type="string" required>
+  The full URL where your application is accessible (e.g., `https://myapp.northwestern.edu`)
+</ParamField>
+
+<ParamField path="PRODUCTION_URL" type="string" required>
+  The canonical production URL. Used by non-production environments for redirects and email links
+</ParamField>
+
+<Warning>
+  Never set `APP_DEBUG=true` in production. This exposes sensitive configuration, environment variables, and stack traces to end users.
+</Warning>
+
+### 2. Database Configuration
+
+Configure your PostgreSQL database connection:
+
+<ParamField path="DB_CONNECTION" type="string" default="pgsql">
+  Database driver (should be `pgsql` for PostgreSQL)
+</ParamField>
+
+<ParamField path="DB_HOST" type="string" required>
+  Database server hostname
+</ParamField>
+
+<ParamField path="DB_PORT" type="integer" default="5432">
+  Database server port
+</ParamField>
+
+<ParamField path="DB_DATABASE" type="string" required>
+  Database name
+</ParamField>
+
+<ParamField path="DB_USERNAME" type="string" required>
+  Database username
+</ParamField>
+
+<ParamField path="DB_PASSWORD" type="string" required>
+  Database password
+</ParamField>
+
+### 3. Session & Security
+
+<ParamField path="SESSION_DRIVER" type="string" default="database">
+  Session storage driver. Use `database` or `redis` for production
+</ParamField>
+
+<ParamField path="SESSION_LIFETIME" type="integer" default="480">
+  Session lifetime in minutes (default: 8 hours)
+</ParamField>
+
+<ParamField path="SESSION_ENCRYPT" type="boolean" default="true">
+  Encrypt session data for security
+</ParamField>
+
+<ParamField path="SESSION_SECURE_COOKIE" type="boolean" default="true">
+  Only send cookies over HTTPS. Must be `true` in production
+</ParamField>
+
+<ParamField path="BCRYPT_ROUNDS" type="integer" default="12">
+  Password hashing rounds. Higher is more secure but slower
+</ParamField>
+
+### 4. Cache & Queue Configuration
+
+<ParamField path="CACHE_STORE" type="string" default="redis">
+  Cache driver. Use `redis` for production
+</ParamField>
+
+<ParamField path="QUEUE_CONNECTION" type="string" default="redis">
+  Queue driver. Use `redis` for production
+</ParamField>
+
+<ParamField path="REDIS_HOST" type="string" required>
+  Redis server hostname
+</ParamField>
+
+<ParamField path="REDIS_PORT" type="integer" default="6379">
+  Redis server port
+</ParamField>
+
+<ParamField path="REDIS_PASSWORD" type="string">
+  Redis password if authentication is enabled
+</ParamField>
+
+<Note>
+  Redis is strongly recommended for production caching and queue management. It provides better performance and reliability than file-based alternatives.
+</Note>
+
+### 5. Object Storage (MinIO/S3)
+
+<ParamField path="AWS_ACCESS_KEY_ID" type="string" required>
+  MinIO or AWS S3 access key
+</ParamField>
+
+<ParamField path="AWS_SECRET_ACCESS_KEY" type="string" required>
+  MinIO or AWS S3 secret key
+</ParamField>
+
+<ParamField path="AWS_DEFAULT_REGION" type="string" default="us-east-1">
+  AWS region or MinIO region
+</ParamField>
+
+<ParamField path="AWS_URL" type="string" required>
+  Public URL for accessing stored objects
+</ParamField>
+
+<ParamField path="AWS_ENDPOINT" type="string" required>
+  MinIO or S3-compatible endpoint URL
+</ParamField>
+
+<ParamField path="AWS_BUCKET" type="string" required>
+  Bucket name for file storage. Must be created before deployment
+</ParamField>
+
+<ParamField path="AWS_USE_PATH_STYLE_ENDPOINT" type="boolean" default="true">
+  Use path-style URLs for MinIO compatibility
+</ParamField>
+
+<ParamField path="S3_STREAM_READS" type="boolean" default="false">
+  Enable streaming for large file reads to reduce memory usage
+</ParamField>
+
+<Warning>
+  Remember to provision your S3/MinIO bucket before deployment. The application will fail to store files if the bucket doesn't exist.
+</Warning>
+
+## Post-Deployment Steps
+
+### 1. Run Migrations
+
+```bash
+php artisan migrate --force
+```
+
+### 2. Optimize Application
+
+```bash
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+php artisan event:cache
+```
+
+<Note>
+  The application includes health checks that verify optimization status. See [Health Checks](/deployment/health-checks) for details.
+</Note>
+
+### 3. Start Queue Workers
+
+Ensure queue workers are running continuously:
+
+```bash
+php artisan queue:work --sleep=3 --tries=3
+```
+
+Consider using Supervisor to manage queue workers automatically.
+
+### 4. Configure Scheduler
+
+Add to your cron:
+
+```bash
+* * * * * cd /path-to-your-project && php artisan schedule:run >> /dev/null 2>&1
+```
+
+### 5. Verify Health Checks
+
+Visit `/health` to verify all health checks pass. See [Health Checks](/deployment/health-checks) for more information.
+
+## Super Administrator Setup
+
+<ParamField path="SUPER_ADMIN_NETIDS" type="string">
+  Comma-separated list of NetIDs to assign Super Administrator role during environment setup
+</ParamField>
+
+Example:
+```bash
+SUPER_ADMIN_NETIDS=abc1234,xyz5678
+```
+
+## Environment Lockdown
+
+By default, production environments have environment lockdown **disabled**, allowing all authenticated users to access the application.
+
+<ParamField path="ENVIRONMENT_LOCKDOWN_ENABLED" type="boolean">
+  When enabled, restricts access to users with non-default roles. Useful for staging/demo environments
+</ParamField>
+
+The lockdown feature:
+- Defaults to `false` for production, local, testing, and CI environments
+- Defaults to `true` for staging and other environments
+- Redirects users without specific roles to a lockdown page
+- Exempts authentication routes and users with impersonation active
+
+For staging environments, you may want to enable lockdown to prevent unauthorized access:
+
+```bash
+ENVIRONMENT_LOCKDOWN_ENABLED=true
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environment Configuration" icon="gear" href="/deployment/environment-configuration">
+    Complete reference for all environment variables
+  </Card>
+  <Card title="Health Checks" icon="heart-pulse" href="/deployment/health-checks">
+    Configure monitoring and health check notifications
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/deployment/monitoring">
+    Set up Sentry and Telescope for observability
+  </Card>
+</CardGroup>

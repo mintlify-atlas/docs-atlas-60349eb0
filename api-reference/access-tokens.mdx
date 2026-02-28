@@ -1,0 +1,583 @@
+---
+title: 'Access Tokens'
+description: 'Manage API access tokens for the authenticated user'
+---
+
+## List all access tokens
+
+<api-endpoint method="GET" path="/api/v1/me/tokens" />
+
+Retrieve a paginated list of all access tokens for the authenticated user.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+  
+  ```
+  Authorization: Bearer YOUR_ACCESS_TOKEN
+  ```
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="page" type="integer" default="1">
+  Page number of results to fetch (minimum: 1)
+</ParamField>
+
+### Response
+
+<ResponseField name="data" type="array">
+  Array of access token objects
+  
+  <Expandable title="Access Token Object">
+    <ResponseField name="id" type="integer">
+      Unique identifier for the access token
+    </ResponseField>
+    
+    <ResponseField name="name" type="string">
+      Friendly name for the token
+    </ResponseField>
+    
+    <ResponseField name="status" type="string">
+      Operational status of the token. Possible values: `active`, `expired`, `revoked`
+    </ResponseField>
+    
+    <ResponseField name="last_used_at" type="string | null">
+      ISO 8601 timestamp when this token was last used (null if never used)
+    </ResponseField>
+    
+    <ResponseField name="usage_count" type="integer">
+      Number of times this token has been used
+    </ResponseField>
+    
+    <ResponseField name="expires_at" type="string | null">
+      ISO 8601 timestamp when this token expires (null means the token does not expire)
+    </ResponseField>
+    
+    <ResponseField name="created_at" type="string">
+      ISO 8601 timestamp when the token was created
+    </ResponseField>
+    
+    <ResponseField name="allowed_ips" type="array | null">
+      Optional list of IPs or CIDR ranges allowed to use this token
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="links" type="object">
+  Pagination links
+  
+  <Expandable title="Properties">
+    <ResponseField name="first" type="string">
+      URL to the first page
+    </ResponseField>
+    
+    <ResponseField name="last" type="string">
+      URL to the last page
+    </ResponseField>
+    
+    <ResponseField name="prev" type="string | null">
+      URL to the previous page (null if on first page)
+    </ResponseField>
+    
+    <ResponseField name="next" type="string | null">
+      URL to the next page (null if on last page)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="meta" type="object">
+  Pagination metadata
+  
+  <Expandable title="Properties">
+    <ResponseField name="current_page" type="integer">
+      Current page number
+    </ResponseField>
+    
+    <ResponseField name="from" type="integer">
+      Index of first item on current page
+    </ResponseField>
+    
+    <ResponseField name="last_page" type="integer">
+      Total number of pages
+    </ResponseField>
+    
+    <ResponseField name="path" type="string">
+      Base URL path
+    </ResponseField>
+    
+    <ResponseField name="per_page" type="integer">
+      Number of items per page (always 20)
+    </ResponseField>
+    
+    <ResponseField name="to" type="integer">
+      Index of last item on current page
+    </ResponseField>
+    
+    <ResponseField name="total" type="integer">
+      Total number of items across all pages
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X GET "https://example.edu/api/v1/me/tokens?page=1" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Accept: application/json"
+```
+
+```python Python
+import requests
+
+url = "https://example.edu/api/v1/me/tokens"
+headers = {
+    "Authorization": "Bearer YOUR_ACCESS_TOKEN",
+    "Accept": "application/json"
+}
+params = {"page": 1}
+
+response = requests.get(url, headers=headers, params=params)
+print(response.json())
+```
+
+```javascript JavaScript
+fetch('https://example.edu/api/v1/me/tokens?page=1', {
+  method: 'GET',
+  headers: {
+    'Authorization': 'Bearer YOUR_ACCESS_TOKEN',
+    'Accept': 'application/json'
+  }
+})
+.then(response => response.json())
+.then(data => console.log(data));
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 - Success
+{
+  "data": [
+    {
+      "id": 1,
+      "name": "Production Deploy",
+      "status": "active",
+      "last_used_at": "2024-04-11T14:35:05Z",
+      "usage_count": 42,
+      "expires_at": null,
+      "created_at": "2024-03-01T18:11:00Z",
+      "allowed_ips": null
+    }
+  ],
+  "links": {
+    "first": "https://example.edu/api/v1/me/tokens?page=1",
+    "last": "https://example.edu/api/v1/me/tokens?page=1",
+    "prev": null,
+    "next": null
+  },
+  "meta": {
+    "current_page": 1,
+    "from": 1,
+    "last_page": 1,
+    "path": "https://example.edu/api/v1/me/tokens",
+    "per_page": 20,
+    "to": 15,
+    "total": 15
+  }
+}
+```
+
+```json 401 - Unauthorized
+{
+  "type": "https://example.edu/problems/unauthorized",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Missing or invalid bearer token."
+}
+```
+</ResponseExample>
+
+---
+
+## Create an access token
+
+<api-endpoint method="POST" path="/api/v1/me/tokens" />
+
+Create a new access token. The plain bearer token is only returned once in the response.
+
+<Warning>
+  **Important:** The bearer token is only shown once during creation. Store it securely immediately as it cannot be retrieved again.
+</Warning>
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+  
+  ```
+  Authorization: Bearer YOUR_ACCESS_TOKEN
+  ```
+</ParamField>
+
+<ParamField header="Content-Type" type="string" required>
+  Must be `application/json`
+</ParamField>
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  Friendly name for the token so you can identify it later
+</ParamField>
+
+<ParamField body="expires_at" type="integer">
+  UTC timestamp (in seconds) for when the token should expire. Must be at least 24 hours in the future. If not provided, the token will not expire.
+</ParamField>
+
+<ParamField body="allowed_ips" type="array">
+  Optional allowlist of IPs or CIDR ranges that can use this token. If not provided, the token can be used from any IP address.
+  
+  Example: `["10.0.0.0/24", "203.0.113.12"]`
+</ParamField>
+
+### Response
+
+<ResponseField name="data" type="object">
+  The created access token object (same structure as in list response)
+</ResponseField>
+
+<ResponseField name="meta" type="object">
+  Additional metadata about the token creation
+  
+  <Expandable title="Properties">
+    <ResponseField name="bearer_token" type="string">
+      The full bearer token. **This is only returned once and cannot be retrieved again.**
+    </ResponseField>
+    
+    <ResponseField name="message" type="string">
+      Informational message about token storage
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X POST https://example.edu/api/v1/me/tokens \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "name": "CI Deployments",
+    "expires_at": 1751328000,
+    "allowed_ips": ["10.0.0.0/24", "203.0.113.12"]
+  }'
+```
+
+```python Python
+import requests
+import time
+
+url = "https://example.edu/api/v1/me/tokens"
+headers = {
+    "Authorization": "Bearer YOUR_ACCESS_TOKEN",
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+}
+data = {
+    "name": "CI Deployments",
+    "expires_at": int(time.time()) + 86400 * 365,  # 1 year from now
+    "allowed_ips": ["10.0.0.0/24", "203.0.113.12"]
+}
+
+response = requests.post(url, json=data, headers=headers)
+print(response.json())
+```
+
+```javascript JavaScript
+const url = 'https://example.edu/api/v1/me/tokens';
+const data = {
+  name: 'CI Deployments',
+  expires_at: Math.floor(Date.now() / 1000) + (86400 * 365), // 1 year from now
+  allowed_ips: ['10.0.0.0/24', '203.0.113.12']
+};
+
+fetch(url, {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer YOUR_ACCESS_TOKEN',
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  },
+  body: JSON.stringify(data)
+})
+.then(response => response.json())
+.then(data => console.log(data));
+```
+</RequestExample>
+
+<ResponseExample>
+```json 201 - Created
+{
+  "data": {
+    "id": 23145,
+    "name": "CI Deployments",
+    "status": "active",
+    "last_used_at": null,
+    "usage_count": 0,
+    "expires_at": null,
+    "created_at": "2025-03-01T18:11:00Z",
+    "allowed_ips": ["10.0.0.0/24", "203.0.113.12"]
+  },
+  "meta": {
+    "bearer_token": "YiRqNBToe7EIXAnmtCB3a9gAwHNh0xXZUX3A9zARG5CWKUcDhRn4U9qGcG3q7TwB",
+    "message": "Token generated successfully. Store the bearer token immediately; it will not be shown again."
+  }
+}
+```
+
+```json 401 - Unauthorized
+{
+  "type": "https://example.edu/problems/unauthorized",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Missing or invalid bearer token."
+}
+```
+
+```json 422 - Validation Error
+{
+  "type": "https://example.edu/problems/validation-error",
+  "title": "Validation Error",
+  "status": 422,
+  "detail": "The given data was invalid.",
+  "errors": {
+    "name": ["The name field is required."],
+    "expires_at": ["The expires at must be at least 24 hours in the future."]
+  }
+}
+```
+</ResponseExample>
+
+---
+
+## Get an access token
+
+<api-endpoint method="GET" path="/api/v1/me/tokens/{token}" />
+
+Retrieve details for a specific access token.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+  
+  ```
+  Authorization: Bearer YOUR_ACCESS_TOKEN
+  ```
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="token" type="integer" required>
+  The ID of the access token
+</ParamField>
+
+### Response
+
+<ResponseField name="data" type="object">
+  The access token object (same structure as in list response)
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X GET https://example.edu/api/v1/me/tokens/42 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Accept: application/json"
+```
+
+```python Python
+import requests
+
+token_id = 42
+url = f"https://example.edu/api/v1/me/tokens/{token_id}"
+headers = {
+    "Authorization": "Bearer YOUR_ACCESS_TOKEN",
+    "Accept": "application/json"
+}
+
+response = requests.get(url, headers=headers)
+print(response.json())
+```
+
+```javascript JavaScript
+const tokenId = 42;
+fetch(`https://example.edu/api/v1/me/tokens/${tokenId}`, {
+  method: 'GET',
+  headers: {
+    'Authorization': 'Bearer YOUR_ACCESS_TOKEN',
+    'Accept': 'application/json'
+  }
+})
+.then(response => response.json())
+.then(data => console.log(data));
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 - Success
+{
+  "data": {
+    "id": 42,
+    "name": "CI Deployments",
+    "status": "active",
+    "last_used_at": "2024-04-11T14:35:05Z",
+    "usage_count": 12,
+    "expires_at": "2024-12-31T06:00:00Z",
+    "created_at": "2024-03-01T18:11:00Z",
+    "allowed_ips": ["10.0.0.0/24", "203.0.113.12"]
+  }
+}
+```
+
+```json 401 - Unauthorized
+{
+  "type": "https://example.edu/problems/unauthorized",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Missing or invalid bearer token."
+}
+```
+
+```json 403 - Forbidden
+{
+  "type": "https://example.edu/problems/forbidden",
+  "title": "Forbidden",
+  "status": 403,
+  "detail": "This token does not belong to you."
+}
+```
+
+```json 404 - Not Found
+{
+  "type": "https://example.edu/problems/not-found",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Access token not found."
+}
+```
+</ResponseExample>
+
+---
+
+## Revoke an access token
+
+<api-endpoint method="DELETE" path="/api/v1/me/tokens/{token}" />
+
+Revoke an access token. Once revoked, the token can no longer be used for authentication.
+
+<Warning>
+  You cannot revoke the token you are currently using for authentication.
+</Warning>
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+  
+  ```
+  Authorization: Bearer YOUR_ACCESS_TOKEN
+  ```
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="token" type="integer" required>
+  The ID of the access token to revoke
+</ParamField>
+
+### Response
+
+Returns `204 No Content` on success with an empty response body.
+
+<RequestExample>
+```bash cURL
+curl -X DELETE https://example.edu/api/v1/me/tokens/42 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Accept: application/json"
+```
+
+```python Python
+import requests
+
+token_id = 42
+url = f"https://example.edu/api/v1/me/tokens/{token_id}"
+headers = {
+    "Authorization": "Bearer YOUR_ACCESS_TOKEN",
+    "Accept": "application/json"
+}
+
+response = requests.delete(url, headers=headers)
+print(f"Status: {response.status_code}")  # Should be 204
+```
+
+```javascript JavaScript
+const tokenId = 42;
+fetch(`https://example.edu/api/v1/me/tokens/${tokenId}`, {
+  method: 'DELETE',
+  headers: {
+    'Authorization': 'Bearer YOUR_ACCESS_TOKEN',
+    'Accept': 'application/json'
+  }
+})
+.then(response => {
+  if (response.status === 204) {
+    console.log('Token revoked successfully');
+  }
+});
+```
+</RequestExample>
+
+<ResponseExample>
+```text 204 - No Content
+(Empty response body)
+```
+
+```json 401 - Unauthorized
+{
+  "type": "https://example.edu/problems/unauthorized",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Missing or invalid bearer token."
+}
+```
+
+```json 403 - Forbidden
+{
+  "type": "https://example.edu/problems/forbidden",
+  "title": "Forbidden",
+  "status": 403,
+  "detail": "This token does not belong to you."
+}
+```
+
+```json 404 - Not Found
+{
+  "type": "https://example.edu/problems/not-found",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Access token not found."
+}
+```
+
+```json 422 - Cannot Revoke Current Token
+{
+  "type": "https://example.edu/problems/validation-error",
+  "title": "Validation Error",
+  "status": 422,
+  "detail": "The given data was invalid.",
+  "errors": {
+    "token": ["You cannot revoke the token you are currently using."]
+  }
+}
+```
+</ResponseExample>

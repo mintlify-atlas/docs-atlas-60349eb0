@@ -1,0 +1,144 @@
+---
+title: 'User Management Overview'
+description: 'Understanding user types, authentication, and data management'
+---
+
+The application supports multiple user types with different authentication methods and data management strategies.
+
+## User Types
+
+Users are categorized by their authentication type (`auth_type`):
+
+### SSO Users
+
+Northwestern community members who authenticate via Single Sign-On. These users are automatically provisioned through Just-In-Time (JIT) provisioning from the Northwestern Directory.
+
+- **Auth Type**: `sso`
+- **Username**: Northwestern NetID
+- **Provisioning**: Automatic on first login
+- **Data Source**: Northwestern Directory (LDAP)
+
+### Local Users
+
+External users who authenticate via one-time verification codes sent to their email.
+
+- **Auth Type**: `local`
+- **Username**: Auto-generated from email (e.g., `john-doe-abc123`)
+- **Provisioning**: Manual creation by administrators
+- **Data Source**: Manually entered
+
+### API Users
+
+Service accounts for programmatic access to the application.
+
+- **Auth Type**: `api`
+- **Username**: Custom (typically prefixed with `api-`)
+- **Provisioning**: Manual creation by administrators
+- **Authentication**: Bearer tokens
+
+## User Model
+
+The `User` model is located at `app/Domains/User/Models/User.php:1` and extends Laravel's `Authenticatable` class.
+
+### Core Attributes
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `username` | string | Northwestern NetID or auto-generated username |
+| `auth_type` | enum | Authentication method (SSO, LOCAL, API) |
+| `primary_affiliation` | enum | User's primary affiliation (student, faculty, staff, affiliate, other) |
+| `employee_id` | string\|null | Student/employee ID |
+| `hr_employee_id` | string\|null | myHR employee ID (for users with different student/employee IDs) |
+| `first_name` | string\|null | User's first name |
+| `last_name` | string\|null | User's last name |
+| `email` | string\|null | Primary email address |
+| `phone` | string\|null | Phone number |
+| `departments` | array | List of department names |
+| `job_titles` | array | List of job titles |
+| `description` | string\|null | Custom description (primarily for local/API users) |
+
+### Directory Sync Attributes
+
+These attributes track synchronization with the Northwestern Directory:
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `last_directory_sync_at` | datetime\|null | Last successful directory sync |
+| `directory_sync_last_failed_at` | datetime\|null | Last failed directory sync attempt |
+| `netid_inactive` | boolean\|null | Whether the NetID is marked as inactive |
+| `wildcard_photo_s3_key` | string\|null | S3 key for user's photo |
+| `wildcard_photo_last_synced_at` | datetime\|null | Last photo sync timestamp |
+
+### Computed Attributes
+
+The User model provides several computed attributes defined at `app/Domains/User/Models/User.php:159`:
+
+- **`full_name`**: First and last name combined ("First Last")
+- **`clerical_name`**: Last name first format ("Last, First")
+- **`is_local_user`**: Boolean indicating local authentication
+- **`is_api_user`**: Boolean indicating API authentication
+- **`non_default_roles`**: Roles excluding the default "Northwestern User" system role
+
+## Relationships
+
+The User model defines several key relationships:
+
+### Login Records
+
+```php
+$user->login_records // All login records
+$user->latest_login_record // Most recent login
+```
+
+See [Login Record Tracking](/users/login-records) for details.
+
+### Authentication
+
+```php
+$user->login_challenges // One-time verification codes
+$user->access_tokens // API Bearer tokens
+$user->active_access_tokens // Non-expired tokens
+```
+
+### Roles and Permissions
+
+```php
+$user->roles // Assigned roles
+$user->can('permission-name') // Check permission
+```
+
+The User model uses Spatie's `HasRoles` trait with custom auditing functionality defined at `app/Domains/User/Models/User.php:56`.
+
+## Affiliations
+
+User affiliations are defined in `app/Domains/User/Enums/AffiliationEnum.php:1`:
+
+| Affiliation | Value | Description |
+|-------------|-------|-------------|
+| Student | `student` | Enrolled students |
+| Faculty | `faculty` | Faculty members |
+| Staff | `staff` | Staff employees |
+| Affiliate | `affiliate` | Affiliated users |
+| Other | `not-matched` | Unmatched or external users |
+
+<Note>
+The `primary_affiliation` value comes from the `eduPersonPrimaryAffiliation` LDAP attribute for SSO users.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="JIT Provisioning" icon="sync" href="/users/provisioning">
+  Learn how SSO users are automatically created from Directory
+</Card>
+
+<Card title="User Profiles" icon="user" href="/users/profiles">
+  Managing user profile data and synchronization
+</Card>
+
+<Card title="Login Records" icon="clock" href="/users/login-records">
+  Track user authentication events and segments
+</Card>
+
+</CardGroup>

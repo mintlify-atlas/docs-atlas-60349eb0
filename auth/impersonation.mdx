@@ -1,0 +1,492 @@
+---
+title: "User Impersonation"
+description: "Impersonate users for support, troubleshooting, and testing"
+---
+
+The starter kit includes user impersonation functionality that allows administrators to authenticate as another user to troubleshoot issues, test permissions, or provide support. This is built on the `lab404/laravel-impersonate` package with custom security enhancements.
+
+## Overview
+
+Impersonation enables authorized administrators to:
+
+- Log in as any user to see their exact experience
+- Test permission configurations
+- Troubleshoot user-reported issues
+- Verify role assignments
+- Debug user-specific problems
+
+<Warning>
+  **Security Sensitive**: Impersonation requires the `MANAGE_IMPERSONATION` permission, which is a system-managed permission only assignable by super administrators.
+</Warning>
+
+## Requirements
+
+To impersonate users, you must have the `MANAGE_IMPERSONATION` permission:
+
+<CodeGroup>
+```php Permission Check
+use App\Domains\Auth\Enums\PermissionEnum;
+
+if (auth()->user()->can(PermissionEnum::MANAGE_IMPERSONATION)) {
+    // User can impersonate
+}
+```
+</CodeGroup>
+
+This permission is typically granted to:
+- Super Administrators
+- Support team members
+- System administrators
+
+## How It Works
+
+<Steps>
+  <Step title="Initiate Impersonation">
+    Administrator clicks **Impersonate** button in admin panel or sends POST request to `/impersonate/take/{userId}`.
+  </Step>
+  
+  <Step title="Authorization Check">
+    The system verifies:
+    - User has `MANAGE_IMPERSONATION` permission (app/Domains/Auth/Http/Controllers/ImpersonationController.php:28)
+    - Target user can be impersonated (app/Domains/Auth/Actions/Impersonation/StartImpersonation.php:26)
+    - Not already impersonating another user
+  </Step>
+  
+  <Step title="Store Original Identity">
+    The system stores the administrator's user ID in session so they can return to their own account.
+  </Step>
+  
+  <Step title="Switch Session">
+    Laravel's authentication session is switched to the target user. All subsequent requests authenticate as the target user.
+  </Step>
+  
+  <Step title="Return to Original">
+    Administrator clicks **Leave Impersonation** or sends POST to `/impersonate/leave` to restore their original session.
+  </Step>
+</Steps>
+
+## Impersonation Controller
+
+The `ImpersonationController` handles impersonation requests:
+
+<CodeGroup>
+```php ImpersonationController
+use App\Domains\Auth\Actions\Impersonation\StartImpersonation;
+use App\Domains\Auth\Actions\Impersonation\StopImpersonation;
+use App\Domains\Auth\Enums\PermissionEnum;
+
+class ImpersonationController extends Controller
+{
+    public function take(
+        Request $request,
+        StartImpersonation $startImpersonation,
+        string|int $id,
+        ?string $guardName = null
+    ): RedirectResponse {
+        $user = auth()->user();
+        
+        // Verify permission
+        abort_unless($user->can(PermissionEnum::MANAGE_IMPERSONATION), 403);
+        
+        // Store return URL for after impersonation
+        $this->storeReturnUrl($request);
+        
+        // Start impersonation
+        $redirectTo = $startImpersonation(
+            user: $user,
+            userIdToImpersonate: $id,
+            guardName: $guardName,
+        );
+        
+        return $this->resolveRedirect($redirectTo);
+    }
+    
+    public function leave(StopImpersonation $stopImpersonation): RedirectResponse
+    {
+        return $this->resolveRedirect($stopImpersonation());
+    }
+}
+```
+</CodeGroup>
+
+## Start Impersonation Action
+
+The `StartImpersonation` action performs security checks:
+
+<CodeGroup>
+```php StartImpersonation
+use Lab404\Impersonate\Services\ImpersonateManager;
+
+class StartImpersonation
+{
+    public function __invoke(
+        User $user,
+        string|int $userIdToImpersonate,
+        ?string $guardName = null
+    ): string {
+        // Verify administrator can impersonate
+        abort_unless($user->canImpersonate(), 403);
+        
+        $guardName ??= $this->manager->getDefaultSessionGuard();
+        
+        // Prevent self-impersonation
+        abort_if(
+            (int) $userIdToImpersonate === $user->getAuthIdentifier(),
+            403
+        );
+        
+        // Prevent nested impersonation
+        abort_if($this->manager->isImpersonating(), 403);
+        
+        // Find target user
+        $userToImpersonate = $this->manager->findUserById(
+            (int) $userIdToImpersonate,
+            $guardName
+        );
+        abort_if(!$userToImpersonate, 404, 'User not found.');
+        
+        // Verify target can be impersonated
+        if ($userToImpersonate->canBeImpersonated() &&
+            $this->manager->take($user, $userToImpersonate, $guardName)
+        ) {
+            return $this->manager->getTakeRedirectTo();
+        }
+        
+        return 'back';
+    }
+}
+```
+</CodeGroup>
+
+## Stop Impersonation Action
+
+The `StopImpersonation` action ends the impersonation session:
+
+<CodeGroup>
+```php StopImpersonation
+use Illuminate\Support\Facades\Session;
+
+class StopImpersonation
+{
+    public function __invoke(): string
+    {
+        // Verify currently impersonating
+        abort_unless($this->manager->isImpersonating(), 403);
+        
+        // Restore original session
+        $this->manager->leave();
+        
+        // Retrieve stored return URL and clear from session
+        $returnUrl = Session::pull('impersonation.return_url');
+        
+        // Return to original page or default
+        return $returnUrl ?: $this->manager->getLeaveRedirectTo();
+    }
+}
+```
+</CodeGroup>
+
+## User Model Methods
+
+The `User` model includes impersonation helper methods via `HandlesImpersonation` trait:
+
+<CodeGroup>
+```php HandlesImpersonation
+trait HandlesImpersonation
+{
+    /**
+     * Determine if user can impersonate others.
+     */
+    public function canImpersonate(): bool
+    {
+        return $this->can(PermissionEnum::MANAGE_IMPERSONATION) 
+            && !$this->isImpersonated();
+    }
+    
+    /**
+     * Determine if user can impersonate specific target.
+     */
+    public function canImpersonateUser(User $target): bool
+    {
+        return $this->isNot($target)
+            && !resolve('impersonate')->isImpersonating()
+            && $this->canImpersonate()
+            && $target->canBeImpersonated();
+    }
+    
+    /**
+     * Determine if user can be impersonated.
+     */
+    public function canBeImpersonated(): bool
+    {
+        // API users cannot be impersonated
+        return $this->auth_type !== AuthTypeEnum::API;
+    }
+    
+    /**
+     * Check if currently under impersonation.
+     */
+    public function isImpersonated(): bool
+    {
+        return resolve('impersonate')->isImpersonating();
+    }
+}
+```
+</CodeGroup>
+
+## Routes
+
+Impersonation routes in `routes/auth.php`:
+
+```php
+Route::post('/impersonate/take/{id}/{guardName?}', [ImpersonationController::class, 'take'])
+    ->middleware('throttle:auth:impersonate')
+    ->name('impersonate');
+
+Route::post('/impersonate/leave', [ImpersonationController::class, 'leave'])
+    ->middleware('throttle:auth:impersonate')
+    ->name('impersonate.leave');
+```
+
+Both routes are rate-limited to prevent abuse.
+
+## Return URL Handling
+
+The system stores the referring URL when impersonation starts, allowing administrators to return to the exact page they were viewing:
+
+<CodeGroup>
+```php Return URL Storage
+private function storeReturnUrl(Request $request): void
+{
+    $returnUrl = $request->headers->get('referer');
+    
+    if (!$returnUrl || !filter_var($returnUrl, FILTER_VALIDATE_URL)) {
+        return;
+    }
+    
+    // Verify same domain for security
+    $refererHost = parse_url($returnUrl, PHP_URL_HOST);
+    $appHost = parse_url(config('app.url'), PHP_URL_HOST);
+    
+    if ($refererHost === $appHost) {
+        Session::put('impersonation.return_url', $returnUrl);
+    }
+}
+```
+</CodeGroup>
+
+This provides a seamless experience when returning from impersonation.
+
+## UI Integration
+
+In Filament admin panel, add impersonation actions to user resources:
+
+<CodeGroup>
+```php Filament Action
+use Filament\Tables\Actions\Action;
+
+Action::make('impersonate')
+    ->icon('heroicon-o-user-circle')
+    ->color('warning')
+    ->requiresConfirmation()
+    ->visible(fn(User $record) => auth()->user()->canImpersonateUser($record))
+    ->action(function (User $record) {
+        return redirect()->route('impersonate', ['id' => $record->id]);
+    });
+```
+</CodeGroup>
+
+## Showing Impersonation Banner
+
+Display a banner when impersonating to remind administrators:
+
+<CodeGroup>
+```blade Impersonation Banner
+@if(auth()->user()?->isImpersonated())
+    <div class="bg-yellow-500 text-white px-4 py-2 text-center">
+        <p>
+            You are impersonating <strong>{{ auth()->user()->name }}</strong>.
+            <form method="POST" action="{{ route('impersonate.leave') }}" class="inline">
+                @csrf
+                <button type="submit" class="underline">Leave Impersonation</button>
+            </form>
+        </p>
+    </div>
+@endif
+```
+</CodeGroup>
+
+## Security Considerations
+
+### Restrictions
+
+1. **API Users Cannot Be Impersonated**: Users with `auth_type = 'api'` are blocked from impersonation (app/Domains/User/Models/Concerns/HandlesImpersonation.php:49)
+2. **No Self-Impersonation**: Users cannot impersonate themselves
+3. **No Nested Impersonation**: Cannot impersonate while already impersonating
+4. **Permission Required**: Must have `MANAGE_IMPERSONATION` permission
+
+### Audit Trail
+
+Impersonation events should be logged for audit purposes. Consider implementing:
+
+<CodeGroup>
+```php Audit Logging
+use Illuminate\Support\Facades\Log;
+
+// When starting impersonation
+Log::info('User impersonation started', [
+    'impersonator_id' => $admin->id,
+    'impersonator_email' => $admin->email,
+    'target_id' => $targetUser->id,
+    'target_email' => $targetUser->email,
+    'ip' => request()->ip(),
+]);
+
+// When ending impersonation
+Log::info('User impersonation ended', [
+    'impersonator_id' => $admin->id,
+    'duration_seconds' => $duration,
+]);
+```
+</CodeGroup>
+
+### Rate Limiting
+
+Both impersonation routes are rate-limited via `throttle:auth:impersonate` middleware to prevent abuse.
+
+## Testing with Impersonation
+
+Impersonation is useful for testing:
+
+<CodeGroup>
+```php Feature Test
+use App\Domains\User\Models\User;
+
+public function test_user_can_access_dashboard()
+{
+    $admin = User::factory()->create();
+    $admin->givePermissionTo(PermissionEnum::MANAGE_IMPERSONATION);
+    
+    $testUser = User::factory()->create();
+    $testUser->assignRole('Content Editor');
+    
+    // Impersonate test user
+    $this->actingAs($admin)
+        ->post(route('impersonate', ['id' => $testUser->id]));
+    
+    // Now authenticated as test user
+    $this->assertAuthenticated();
+    $this->assertEquals($testUser->id, auth()->id());
+    
+    // Test the dashboard
+    $response = $this->get('/dashboard');
+    $response->assertStatus(200);
+    
+    // Leave impersonation
+    $this->post(route('impersonate.leave'));
+    
+    // Back to admin
+    $this->assertEquals($admin->id, auth()->id());
+}
+```
+</CodeGroup>
+
+## Customization
+
+### Custom Impersonation Rules
+
+Override `canBeImpersonated()` in your User model for custom rules:
+
+<CodeGroup>
+```php Custom Rules
+public function canBeImpersonated(): bool
+{
+    // Don't allow impersonating API users
+    if ($this->auth_type === AuthTypeEnum::API) {
+        return false;
+    }
+    
+    // Don't allow impersonating super admins
+    if ($this->hasRole('Super Administrator')) {
+        return false;
+    }
+    
+    // Don't allow impersonating blocked users
+    if ($this->is_blocked) {
+        return false;
+    }
+    
+    return true;
+}
+```
+</CodeGroup>
+
+### Custom Redirect After Impersonation
+
+Modify the redirect behavior in your `ImpersonationController`:
+
+<CodeGroup>
+```php Custom Redirect
+private function resolveRedirect(string $redirectTo): RedirectResponse
+{
+    if ($redirectTo === 'back') {
+        return redirect()->back();
+    }
+    
+    // Custom logic
+    if (auth()->user()->hasRole('Content Editor')) {
+        return redirect()->route('posts.index');
+    }
+    
+    $returnUrl = Session::get('impersonation.return_url');
+    
+    if ($redirectTo === '/' && $returnUrl) {
+        return redirect()->to($returnUrl);
+    }
+    
+    return redirect()->to($redirectTo);
+}
+```
+</CodeGroup>
+
+## Troubleshooting
+
+### Cannot Impersonate User
+
+1. Verify you have `MANAGE_IMPERSONATION` permission
+2. Check target user's `canBeImpersonated()` returns `true`
+3. Ensure you're not already impersonating
+4. Verify not trying to self-impersonate
+
+### Cannot Leave Impersonation
+
+1. Check you're actually impersonating: `auth()->user()->isImpersonated()`
+2. Try clearing session: `php artisan cache:clear`
+3. Review application logs for errors
+
+### Session Lost After Impersonation
+
+Ensure session driver is persistent (not array) in `.env`:
+
+```bash .env
+SESSION_DRIVER=database
+```
+
+## Best Practices
+
+1. **Always show impersonation status**: Display a visible banner when impersonating
+2. **Log impersonation events**: Maintain audit trail of all impersonations
+3. **Limit duration**: Consider auto-expiring impersonation sessions after a timeout
+4. **Restrict access carefully**: Only grant `MANAGE_IMPERSONATION` to trusted administrators
+5. **Test regularly**: Use impersonation to test user experiences and permission configurations
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Roles & Permissions" icon="user-shield" href="/auth/roles-permissions">
+    Learn about the MANAGE_IMPERSONATION permission
+  </Card>
+  <Card title="Authentication Overview" icon="shield" href="/auth/overview">
+    Understanding the authentication system
+  </Card>
+</CardGroup>

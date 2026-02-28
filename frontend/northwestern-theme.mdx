@@ -1,0 +1,407 @@
+---
+title: Northwestern Theme & Branding
+description: Customize the application with Northwestern University's brand identity
+---
+
+The Northwestern Laravel Starter includes built-in support for Northwestern University's brand guidelines, including colors, typography, logos, and layout patterns.
+
+## Brand Configuration
+
+The Northwestern theme is configured in `config/northwestern-theme.php`:
+
+```php
+return [
+    // Brand lockup image
+    'lockup' => env('NU_THEME_LOCKUP', 
+        'https://common.northwestern.edu/v8/css/images/northwestern.svg'),
+
+    // Office contact information
+    'office' => [
+        'name' => env('NU_THEME_OFFICE_NAME', 'Information Technology'),
+        'addr' => env('NU_THEME_OFFICE_ADDR', '1800 Sherman Ave'),
+        'city' => env('NU_THEME_OFFICE_CITY', 'Evanston, IL 60201'),
+        'phone' => env('NU_THEME_OFFICE_PHONE', '847-491-4357 (1-HELP)'),
+        'email' => env('NU_THEME_OFFICE_EMAIL', 'consultant@northwestern.edu'),
+    ],
+
+    // Global alerts
+    'globalAlerts' => [
+        App\Domains\Core\GlobalAlerts\UserImpersonated::class,
+    ],
+];
+```
+
+## Environment Configuration
+
+Customize branding for your department by setting environment variables:
+
+```bash
+# .env
+NU_THEME_LOCKUP=https://your-department.northwestern.edu/logo.svg
+NU_THEME_OFFICE_NAME="Kellogg School of Management"
+NU_THEME_OFFICE_ADDR="2211 Campus Drive"
+NU_THEME_OFFICE_CITY="Evanston, IL 60208"
+NU_THEME_OFFICE_PHONE="847-491-3300"
+NU_THEME_OFFICE_EMAIL="kellogg-info@northwestern.edu"
+```
+
+<Note>
+The default lockup uses the Northwestern wordmark. Replace it with your department or school's approved lockup image.
+</Note>
+
+## Northwestern Colors
+
+### Primary Brand Colors
+
+The theme uses Northwestern's official color palette defined in `resources/sass/_variables.scss`:
+
+```scss
+// Northwestern Purple
+$purple: #4e2a84 !default;          // Primary brand color
+$purple-dark: #401f68 !default;     // Darker shade for hover states
+$purple-light: #dcd4e6 !default;    // Light shade for backgrounds
+
+// Additional Northwestern colors
+$blue: #5091cd;
+$cyan: #6cb2eb;
+$teal: #7fcecd;
+$green: #58b947;
+$yellow: #ffc520;
+$orange: #ca7c1b;
+$red: #ef553f;
+
+// Utility colors
+$primary: $purple !default;
+$headings-color: $purple;
+$info: #007FA4;
+$success: #008656;
+$danger: #dc3545;
+```
+
+### Using Colors in CSS
+
+```css
+.bg-dark-purple {
+    background-color: #401f68;
+}
+
+.bg-light-purple {
+    background-color: #dcd4e6;
+}
+
+.text-purple {
+    color: #4e2a84;
+}
+```
+
+## Typography
+
+### Northwestern Fonts
+
+The application uses Northwestern's brand typography loaded from `resources/sass/nu_fonts.scss`:
+
+**Akkurat Pro** - Primary typeface
+- Akkurat Pro Regular (body text)
+- Akkurat Pro Bold (emphasis and links)
+
+**Font Stack**:
+```scss
+$font-family-sans-serif: "Akkurat Pro Regular", 
+    -apple-system, BlinkMacSystemFont, 
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, 
+    sans-serif;
+```
+
+**Alternative Fonts**:
+- **Poppins Bold**: Used for special headings
+- **Poppins Light**: Used for lighter text
+
+### Font Usage
+
+```html
+<p>Body text uses Akkurat Pro Regular</p>
+<a href="#">Links use Akkurat Pro Bold</a>
+<h1 class="font-poppins-bold">Poppins Bold heading</h1>
+<p class="font-poppins-light">Poppins Light text</p>
+```
+
+## Northwestern Lockup
+
+### Default Lockup
+
+The default Northwestern wordmark is loaded from:
+```
+https://common.northwestern.edu/v8/css/images/northwestern.svg
+```
+
+### Custom Department Lockup
+
+For department-specific applications, use your approved lockup:
+
+**Option 1: Environment Variable**
+```bash
+NU_THEME_LOCKUP="https://your-dept.northwestern.edu/lockup.svg"
+```
+
+**Option 2: Local Asset**
+```bash
+# Place lockup in public directory
+NU_THEME_LOCKUP="/images/department-lockup.svg"
+```
+
+### Lockup Specifications
+
+Follow Northwestern's brand guidelines:
+- Use approved lockup images only
+- Maintain proper aspect ratio (typically 358px × 42px)
+- Ensure adequate clear space around the logo
+- Use SVG format for scalability
+
+## Layout Components
+
+### Bootstrap 5 Foundation
+
+The theme is built on Bootstrap 5.3.8 with Northwestern customizations:
+
+```scss
+// Disable rounded corners (Northwestern standard)
+$border-radius: 0 !default;
+$border-radius-sm: 0 !default;
+$border-radius-lg: 0 !default;
+```
+
+### Northwestern Purple Layout
+
+Custom styles in `resources/sass/nu_purple_layout.scss`:
+
+**Buttons**:
+```scss
+.btn-primary {
+    background-color: #4e2a84;
+    border-color: #4e2a84;
+    font-family: "Akkurat Pro Bold", "Arial Black", sans-serif;
+}
+
+.btn-primary:hover {
+    background-color: #401f68;
+    border-color: #401f68;
+    color: white;
+}
+```
+
+**Body**:
+```scss
+body {
+    background-color: #fafafa;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+```
+
+**Main Content**:
+```scss
+div.main-content {
+    padding: 1em;
+    margin: 2em auto;
+    background-color: #fff;
+}
+```
+
+## Footer
+
+The Northwestern footer is styled with the university's purple background:
+
+```scss
+footer {
+    min-height: 350px;
+    background-color: #4e2a84;
+    color: white;
+    font-size: 14px;
+    padding: 3em 0 2em;
+}
+```
+
+### Footer Icons
+
+Pre-defined Northwestern icons:
+
+```scss
+.address-pin {
+    background: url("https://common.northwestern.edu/v8/css/images/icons/pin-drop.svg") no-repeat;
+    background-size: 18px 24px;
+    height: 24px;
+    width: 18px;
+}
+
+.phone-pin {
+    background: url("https://common.northwestern.edu/v8/css/images/icons/mobile-phone.svg") no-repeat;
+}
+
+.email-pin {
+    background: url("https://common.northwestern.edu/v8/css/images/icons/email.svg") no-repeat;
+}
+```
+
+### Footer Contact Information
+
+Footer displays office information from config:
+
+```html
+<footer>
+    <div class="container">
+        <div class="address-pin">{{ config('northwestern-theme.office.addr') }}</div>
+        <div class="phone-pin">{{ config('northwestern-theme.office.phone') }}</div>
+        <div class="email-pin">{{ config('northwestern-theme.office.email') }}</div>
+    </div>
+</footer>
+```
+
+## Navigation
+
+### Navbar Styling
+
+Dark purple navbar with Northwestern colors:
+
+```scss
+.navbar-dark .navbar-nav .nav-link {
+    color: hsla(0,0%,100%,.6);
+    padding-bottom: 0.5rem;
+    transition: color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+}
+
+.navbar-dark .navbar-nav .nav-link.active {
+    color: #fff;
+}
+
+.navbar-dark .navbar-nav .nav-link:hover:not(.active) {
+    color: hsla(0,0%,100%,.85);
+}
+```
+
+<Note>
+The contrast ratios are adjusted to meet WCAG 2.1 Level AA accessibility requirements.
+</Note>
+
+## Utility Classes
+
+### Custom Utilities
+
+**Headings with slashes** (from Northwestern Research Portal):
+```html
+<h2 class="slashes">Research Areas</h2>
+```
+
+**Required field indicator**:
+```html
+<label class="required">Email Address</label>
+<!-- Displays: * Email Address -->
+```
+
+**Tabular numbers**:
+```html
+<span class="tabular-number">1,234.56</span>
+```
+
+**Focus ring**:
+```html
+<button class="focus-ring-purple">Click Me</button>
+```
+
+### Responsive Borders
+
+```html
+<div class="right-border">Right border on all sizes</div>
+<div class="right-border-md">Right border on medium+ screens</div>
+<div class="right-border-lg">Right border on large+ screens</div>
+```
+
+## Filament Theme Integration
+
+The Filament admin panel uses Northwestern colors:
+
+**Panel Configuration** (`app/Providers/Filament/AdminPanelProvider.php`):
+```php
+use Filament\Support\Colors\Color;
+
+public function panel(Panel $panel): Panel
+{
+    return $panel
+        ->colors([
+            'primary' => Color::hex('#4E2A84'),
+        ])
+        ->brandLogo(config('northwestern-theme.lockup'))
+        ->brandName(config('app.name'));
+}
+```
+
+**Custom Theme CSS** (`resources/css/filament/administration/theme.css`):
+```css
+@import '/vendor/filament/filament/resources/css/theme.css';
+
+:root {
+    --primary: 78 42 132; /* Northwestern Purple in RGB */
+}
+```
+
+## Customization Examples
+
+### Department-Specific Colors
+
+If your department has approved supplementary colors:
+
+```scss
+// resources/sass/_department_variables.scss
+$dept-primary: #1a5490;      // Department blue
+$dept-secondary: #58b947;    // Department green
+
+.dept-header {
+    background-color: $dept-primary;
+}
+
+.dept-accent {
+    border-left: 3px solid $dept-secondary;
+}
+```
+
+### Custom Button Variants
+
+```scss
+.btn-northwestern {
+    @include button-variant(
+        $background: $purple,
+        $border: $purple,
+        $hover-background: $purple-dark,
+        $hover-border: $purple-dark
+    );
+    font-family: "Akkurat Pro Bold", sans-serif;
+}
+```
+
+## Brand Guidelines Compliance
+
+<CardGroup cols={2}>
+  <Card title="Visual Identity" icon="palette" href="https://www.northwestern.edu/brand/">
+    Northwestern University Brand Guidelines
+  </Card>
+  <Card title="Web Standards" icon="globe" href="https://www.northwestern.edu/brand/web-standards/">
+    Northwestern Web Standards and Best Practices
+  </Card>
+</CardGroup>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Frontend Overview" icon="window" href="/frontend/overview">
+    Overview of frontend architecture and technologies
+  </Card>
+  <Card title="Accessibility" icon="universal-access" href="/frontend/accessibility">
+    Ensuring WCAG 2.1 compliance
+  </Card>
+  <Card title="Filament Admin" icon="gear" href="/frontend/filament-admin">
+    Customizing the Filament admin panel
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/architecture/configuration">
+    Application configuration options
+  </Card>
+</CardGroup>

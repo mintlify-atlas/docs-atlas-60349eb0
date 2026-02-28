@@ -1,0 +1,412 @@
+---
+title: Health Checks
+description: Configure and monitor application health with automated checks and notifications
+---
+
+## Overview
+
+Northwestern Laravel Starter includes a comprehensive health check system powered by [Spatie Laravel Health](https://spatie.be/docs/laravel-health). Health checks continuously monitor critical application components and can send notifications when issues are detected.
+
+## Accessing Health Checks
+
+Health check results are available at:
+
+- **Web Interface**: `/health` - View results in your browser
+- **JSON API**: `/health/json` - Programmatic access for monitoring tools
+
+<Note>
+  Health checks require authentication and appropriate permissions to access.
+</Note>
+
+## Available Health Checks
+
+The application performs the following health checks:
+
+### Queue Check
+
+Monitors that the queue system is processing jobs correctly.
+
+**Check**: `QueueCheck`  
+**Monitors**: Redis queue worker status and job processing
+
+### Cache Check
+
+Verifies that the cache system is functioning properly.
+
+**Check**: `CacheCheck`  
+**Monitors**: Ability to write and read from cache
+
+### Schedule Check
+
+Ensures the Laravel scheduler is running and executing scheduled tasks.
+
+**Check**: `ScheduleCheck`  
+**Monitors**: Cron execution of `php artisan schedule:run`
+
+<Warning>
+  The scheduler requires a cron entry to run. Add this to your crontab:
+  
+  ```bash
+  * * * * * cd /path-to-your-project && php artisan schedule:run >> /dev/null 2>&1
+  ```
+</Warning>
+
+### Debug Mode Check
+
+Verifies that debug mode is disabled in production environments.
+
+**Check**: `DebugModeCheck`  
+**Monitors**: `APP_DEBUG` setting  
+**Skipped**: In local development environments
+
+<Warning>
+  Debug mode must be disabled in production to prevent exposure of sensitive information including stack traces, environment variables, and database queries.
+</Warning>
+
+### Optimized App Check
+
+Confirms that Laravel optimization commands have been run for maximum performance.
+
+**Check**: `OptimizedAppCheck`  
+**Monitors**: Configuration, route, view, and event caching  
+**Skipped**: In local development environments
+
+Run these commands to optimize:
+
+```bash
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+php artisan event:cache
+```
+
+### Security Advisories Check
+
+Scans for known security vulnerabilities in installed Composer packages.
+
+**Check**: `SecurityAdvisoriesCheck`  
+**Monitors**: Security advisories from the [FriendsOfPHP security database](https://github.com/FriendsOfPHP/security-advisories)
+
+### Directory Search Check
+
+Verifies connectivity to Northwestern's Directory Search API.
+
+**Check**: `DirectorySearchCheck` (custom)  
+**Monitors**: API availability and authentication
+
+### Database Check
+
+Confirms database connectivity and responsiveness.
+
+**Check**: `DatabaseCheck`  
+**Monitors**: PostgreSQL connection and query execution  
+**Enabled**: Production environments only
+
+<Note>
+  Database checks are disabled in sub-production environments by default because AWS RDS databases may scale to zero when idle, causing false alarms.
+</Note>
+
+## Configuration
+
+Health check settings are defined in `config/health.php`.
+
+### Result Storage
+
+<ParamField path="HEALTH_DB_CONNECTION" type="string">
+  Database connection for storing health check results. Defaults to `DB_CONNECTION`
+</ParamField>
+
+Results are stored in the database using the `EloquentHealthResultStore` and retained for 5 days by default.
+
+### Notifications
+
+Receive email alerts when health checks fail.
+
+<ParamField path="HEALTH_NOTIFICATIONS_ENABLED" type="boolean" default="false">
+  Enable email notifications for failed health checks
+</ParamField>
+
+<ParamField path="HEALTH_NOTIFICATION_EMAIL" type="string">
+  Email address to receive health check failure notifications
+</ParamField>
+
+Example configuration:
+
+```bash
+HEALTH_NOTIFICATIONS_ENABLED=true
+HEALTH_NOTIFICATION_EMAIL=team@northwestern.edu
+```
+
+#### Notification Throttling
+
+To prevent notification spam, alerts are throttled to once per hour by default. This is configurable in `config/health.php`:
+
+```php
+'throttle_notifications_for_minutes' => 60,
+```
+
+### Notification Channels
+
+By default, notifications are sent via email. You can configure additional channels:
+
+- **Mail**: Email notifications (enabled by default)
+- **Slack**: Requires `laravel/slack-notification-channel` package
+
+#### Slack Configuration
+
+<ParamField path="HEALTH_SLACK_WEBHOOK_URL" type="string">
+  Slack webhook URL for health check notifications
+</ParamField>
+
+To enable Slack notifications:
+
+1. Install the Slack notification channel:
+   ```bash
+   composer require laravel/slack-notification-channel
+   ```
+
+2. Configure your webhook URL:
+   ```bash
+   HEALTH_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+   ```
+
+3. Update `config/health.php` notifications:
+   ```php
+   'notifications' => [
+       Spatie\Health\Notifications\CheckFailedNotification::class => ['mail', 'slack'],
+   ],
+   ```
+
+### Oh Dear Integration
+
+Optionally integrate with [Oh Dear](https://ohdear.app/) for advanced monitoring and notifications even when your application is completely down.
+
+<ParamField path="OH_DEAR_HEALTH_CHECK_SECRET" type="string">
+  Secret token from Oh Dear application health settings
+</ParamField>
+
+Configure in `.env`:
+
+```bash
+OH_DEAR_HEALTH_CHECK_SECRET=your-secret-from-ohdear
+```
+
+Then update `config/health.php`:
+
+```php
+'oh_dear_endpoint' => [
+    'enabled' => true,
+    'always_send_fresh_results' => true,
+    'secret' => env('OH_DEAR_HEALTH_CHECK_SECRET'),
+    'url' => '/oh-dear-health-check-results',
+],
+```
+
+### Heartbeat URLs
+
+Optionally ping external monitoring services when specific checks succeed.
+
+<ParamField path="HORIZON_HEARTBEAT_URL" type="string">
+  URL to ping when Horizon check succeeds (if using Laravel Horizon)
+</ParamField>
+
+<ParamField path="SCHEDULE_HEARTBEAT_URL" type="string">
+  URL to ping when schedule check succeeds
+</ParamField>
+
+Example with [Cronitor](https://cronitor.io/) or similar:
+
+```bash
+SCHEDULE_HEARTBEAT_URL=https://cronitor.link/p/abc123/scheduler
+```
+
+### Secured Access
+
+<ParamField path="HEALTH_SECRET_TOKEN" type="string">
+  Secret token required in `X-Secret-Token` header for accessing health endpoints
+</ParamField>
+
+When configured, requests must include the token:
+
+```bash
+curl -H "X-Secret-Token: your-secret" https://yourapp.northwestern.edu/health/json
+```
+
+## Health Check Registration
+
+Health checks are registered in `app/Providers/HealthServiceProvider.php`. You can customize which checks run and their configuration:
+
+```php
+Health::checks([
+    QueueCheck::new(),
+    CacheCheck::new(),
+    ScheduleCheck::new(),
+    DebugModeCheck::new()->unless(App::isLocal()),
+    OptimizedAppCheck::new()->unless(App::isLocal()),
+    SecurityAdvisoriesCheck::new(),
+    DirectorySearchCheck::new(),
+]);
+
+if (App::isProduction()) {
+    array_unshift($checks, DatabaseCheck::new());
+}
+```
+
+## Monitoring Integration
+
+Integrate health checks with your monitoring infrastructure:
+
+### External Monitoring Services
+
+Use the JSON endpoint with services like:
+
+- **Uptime Robot**: Monitor `/health/json` and alert on 503 status codes
+- **Pingdom**: Check endpoint availability and response content
+- **DataDog**: Create synthetic tests against health endpoints
+- **New Relic**: Set up availability monitoring
+
+Example with curl:
+
+```bash
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://yourapp.northwestern.edu/health/json)
+
+if [ $STATUS -ne 200 ]; then
+    echo "Health check failed with status: $STATUS"
+    # Send alert
+fi
+```
+
+### Kubernetes Health Probes
+
+Use health checks for Kubernetes liveness and readiness probes:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health/json
+    port: 80
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health/json
+    port: 80
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
+
+## Response Format
+
+The JSON endpoint returns structured health check results:
+
+```json
+{
+  "finishedAt": "2026-02-28 10:30:00",
+  "checkResults": [
+    {
+      "name": "Queue",
+      "label": "Queue",
+      "status": "ok",
+      "notificationMessage": "The queue is working",
+      "shortSummary": "Ok",
+      "meta": []
+    },
+    {
+      "name": "Cache",
+      "label": "Cache",
+      "status": "ok",
+      "notificationMessage": "The cache is working",
+      "shortSummary": "Ok",
+      "meta": []
+    }
+  ]
+}
+```
+
+**Status Codes**:
+- `200`: All checks passed
+- `503`: One or more checks failed (configurable via `json_results_failure_status`)
+
+## Custom Health Checks
+
+Create custom health checks for your application-specific requirements:
+
+```php
+use Spatie\Health\Checks\Check;
+use Spatie\Health\Checks\Result;
+
+class CustomServiceCheck extends Check
+{
+    public function run(): Result
+    {
+        $result = Result::make();
+        
+        try {
+            // Your check logic
+            $isHealthy = $this->checkCustomService();
+            
+            if ($isHealthy) {
+                return $result->ok();
+            }
+            
+            return $result->failed('Service is not responding');
+        } catch (\Exception $e) {
+            return $result->failed("Error: {$e->getMessage()}");
+        }
+    }
+}
+```
+
+Register in `HealthServiceProvider`:
+
+```php
+Health::checks([
+    // ... other checks
+    CustomServiceCheck::new(),
+]);
+```
+
+## Troubleshooting
+
+### Health Checks Not Running
+
+Verify the scheduler is configured:
+
+```bash
+# Check crontab
+crontab -l
+
+# Manually run scheduler
+php artisan schedule:run
+
+# Check health queue
+php artisan queue:work --once
+```
+
+### Notifications Not Sending
+
+Check:
+1. `HEALTH_NOTIFICATIONS_ENABLED=true` is set
+2. `HEALTH_NOTIFICATION_EMAIL` is configured
+3. Mail configuration is correct
+4. Check `storage/logs/laravel.log` for errors
+
+### False Positives
+
+Use conditional checks to skip in specific environments:
+
+```php
+DatabaseCheck::new()->unless(App::environment('staging'))
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Monitoring" icon="chart-line" href="/deployment/monitoring">
+    Set up comprehensive monitoring with Sentry and Telescope
+  </Card>
+  <Card title="Production Setup" icon="server" href="/deployment/production-setup">
+    Complete production deployment guide
+  </Card>
+</CardGroup>

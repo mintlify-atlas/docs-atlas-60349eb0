@@ -1,0 +1,509 @@
+---
+title: Monitoring and Observability
+description: Configure Sentry error tracking and Telescope debugging for production monitoring
+---
+
+## Overview
+
+Northwestern Laravel Starter includes two powerful tools for monitoring and observability:
+
+- **Sentry**: Production error tracking and performance monitoring
+- **Telescope**: Local development debugging and request inspection
+
+These tools provide comprehensive visibility into your application's behavior, errors, and performance.
+
+## Sentry Configuration
+
+Sentry captures errors, exceptions, and performance data from your production application.
+
+### Basic Setup
+
+<ParamField path="SENTRY_LARAVEL_DSN" type="string">
+  Data Source Name (DSN) from your Sentry project. Required to enable Sentry
+</ParamField>
+
+<ParamField path="SENTRY_RELEASE" type="string">
+  Release version identifier. Useful for tracking errors by deployment version
+</ParamField>
+
+<ParamField path="SENTRY_ENVIRONMENT" type="string">
+  Environment name (e.g., production, staging). Defaults to `APP_ENV` if not set
+</ParamField>
+
+Example configuration:
+
+```bash
+SENTRY_LARAVEL_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
+SENTRY_RELEASE=v1.2.3
+SENTRY_ENVIRONMENT=production
+```
+
+<Note>
+  Sentry is only enabled when `SENTRY_LARAVEL_DSN` is set. Leave it commented out in development to disable.
+</Note>
+
+### Error Tracking
+
+<ParamField path="SENTRY_SAMPLE_RATE" type="float" default="1.0">
+  Percentage of errors to capture (0.0 to 1.0). Use 1.0 to capture all errors
+</ParamField>
+
+<ParamField path="SENTRY_SEND_DEFAULT_PII" type="boolean" default="false">
+  Include personally identifiable information (user IPs, usernames, etc.) in error reports
+</ParamField>
+
+<Warning>
+  Setting `SENTRY_SEND_DEFAULT_PII=true` will include user information in error reports. Ensure this complies with your privacy policy and data protection requirements.
+</Warning>
+
+### Performance Monitoring
+
+Sentry can capture performance traces to identify slow transactions and bottlenecks.
+
+<ParamField path="SENTRY_TRACES_SAMPLE_RATE" type="float">
+  Percentage of transactions to trace (0.0 to 1.0). Set to null to disable performance monitoring
+</ParamField>
+
+<ParamField path="SENTRY_PROFILES_SAMPLE_RATE" type="float">
+  Percentage of transactions to profile (0.0 to 1.0). Requires traces to be enabled
+</ParamField>
+
+Example for production:
+
+```bash
+# Trace 10% of requests to monitor performance
+SENTRY_TRACES_SAMPLE_RATE=0.1
+
+# Profile 5% of traced transactions
+SENTRY_PROFILES_SAMPLE_RATE=0.05
+```
+
+<Note>
+  Start with low sample rates (0.1 or lower) in high-traffic applications to avoid performance overhead and quota limits.
+</Note>
+
+### Breadcrumbs
+
+Breadcrumbs provide context about actions leading up to an error. All breadcrumbs are enabled by default.
+
+<ParamField path="SENTRY_BREADCRUMBS_LOGS_ENABLED" type="boolean" default="true">
+  Capture Laravel logs as breadcrumbs
+</ParamField>
+
+<ParamField path="SENTRY_BREADCRUMBS_CACHE_ENABLED" type="boolean" default="true">
+  Capture cache hits and writes as breadcrumbs
+</ParamField>
+
+<ParamField path="SENTRY_BREADCRUMBS_LIVEWIRE_ENABLED" type="boolean" default="true">
+  Capture Livewire component interactions as breadcrumbs
+</ParamField>
+
+<ParamField path="SENTRY_BREADCRUMBS_SQL_QUERIES_ENABLED" type="boolean" default="true">
+  Capture SQL queries as breadcrumbs
+</ParamField>
+
+<ParamField path="SENTRY_BREADCRUMBS_SQL_BINDINGS_ENABLED" type="boolean" default="false">
+  Include SQL query parameters in breadcrumbs
+</ParamField>
+
+<ParamField path="SENTRY_BREADCRUMBS_QUEUE_INFO_ENABLED" type="boolean" default="true">
+  Capture queue job information as breadcrumbs
+</ParamField>
+
+<ParamField path="SENTRY_BREADCRUMBS_COMMAND_JOBS_ENABLED" type="boolean" default="true">
+  Capture Artisan command information as breadcrumbs
+</ParamField>
+
+<ParamField path="SENTRY_BREADCRUMBS_HTTP_CLIENT_REQUESTS_ENABLED" type="boolean" default="true">
+  Capture HTTP client requests as breadcrumbs
+</ParamField>
+
+<ParamField path="SENTRY_BREADCRUMBS_NOTIFICATIONS_ENABLED" type="boolean" default="true">
+  Capture sent notifications as breadcrumbs
+</ParamField>
+
+<Warning>
+  Enabling `SENTRY_BREADCRUMBS_SQL_BINDINGS_ENABLED` may expose sensitive data in error reports. Only enable if necessary for debugging.
+</Warning>
+
+### Performance Tracing
+
+Capture detailed performance traces for various operations.
+
+<ParamField path="SENTRY_TRACE_QUEUE_ENABLED" type="boolean" default="true">
+  Trace queue jobs as separate transactions
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_QUEUE_JOBS_ENABLED" type="boolean" default="true">
+  Capture queue jobs as spans on sync driver
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_SQL_QUERIES_ENABLED" type="boolean" default="true">
+  Capture SQL queries as performance spans
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_SQL_BINDINGS_ENABLED" type="boolean" default="false">
+  Include SQL query parameters in spans
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_SQL_ORIGIN_ENABLED" type="boolean" default="true">
+  Capture where SQL queries originated in your code
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_SQL_ORIGIN_THRESHOLD_MS" type="integer" default="100">
+  Only resolve SQL query origin for queries slower than this threshold (milliseconds)
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_VIEWS_ENABLED" type="boolean" default="true">
+  Capture view rendering as spans
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_LIVEWIRE_ENABLED" type="boolean" default="true">
+  Capture Livewire components as spans
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_HTTP_CLIENT_REQUESTS_ENABLED" type="boolean" default="true">
+  Capture HTTP client requests as spans
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_CACHE_ENABLED" type="boolean" default="true">
+  Capture cache operations as spans
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_REDIS_COMMANDS" type="boolean" default="false">
+  Capture Redis operations as spans
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_REDIS_ORIGIN_ENABLED" type="boolean" default="true">
+  Capture where Redis commands originated in your code
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_NOTIFICATIONS_ENABLED" type="boolean" default="true">
+  Capture sent notifications as spans
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_MISSING_ROUTES_ENABLED" type="boolean" default="false">
+  Enable tracing for 404 requests
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_CONTINUE_AFTER_RESPONSE" type="boolean" default="true">
+  Continue tracing after response is sent (captures deferred jobs)
+</ParamField>
+
+<ParamField path="SENTRY_TRACE_DEFAULT_INTEGRATIONS_ENABLED" type="boolean" default="true">
+  Enable default Sentry tracing integrations (recommended)
+</ParamField>
+
+### Ignored Transactions
+
+The application automatically ignores certain routes to reduce noise:
+
+- `/up` - Laravel's default health check endpoint
+
+You can configure additional ignored transactions in `config/sentry.php`:
+
+```php
+'ignore_transactions' => [
+    '/up',
+    '/health',
+    '/telescope*',
+],
+```
+
+### Best Practices
+
+1. **Start Conservative**: Begin with low sample rates and increase as needed
+2. **Monitor Quota**: Track your Sentry quota usage to avoid overage charges
+3. **Release Tracking**: Use `SENTRY_RELEASE` to correlate errors with deployments
+4. **Environment Separation**: Use different Sentry projects or environments for staging and production
+5. **Test Locally**: Comment out `SENTRY_LARAVEL_DSN` in development to avoid test errors
+
+## Telescope Configuration
+
+Telescope provides a beautiful debug assistant for local development and staging environments.
+
+<Warning>
+  Telescope should **never be enabled in production** without proper access controls. It exposes sensitive application data.
+</Warning>
+
+### Basic Setup
+
+<ParamField path="TELESCOPE_ENABLED" type="boolean" default="true">
+  Master switch to enable or disable all Telescope watchers
+</ParamField>
+
+<ParamField path="TELESCOPE_PATH" type="string" default="telescope">
+  URI path where Telescope is accessible (e.g., `/telescope`)
+</ParamField>
+
+<ParamField path="TELESCOPE_DOMAIN" type="string">
+  Subdomain where Telescope should be accessible. Leave empty to use same domain as application
+</ParamField>
+
+Access Telescope at: `https://yourapp.northwestern.edu/telescope`
+
+### Storage Configuration
+
+<ParamField path="TELESCOPE_DRIVER" type="string" default="database">
+  Storage driver for Telescope data
+</ParamField>
+
+Telescope stores debugging data in your database. The connection can be customized in `config/telescope.php`.
+
+### Queue Configuration
+
+<ParamField path="TELESCOPE_QUEUE_CONNECTION" type="string">
+  Queue connection for processing Telescope data. Defaults to default queue connection
+</ParamField>
+
+<ParamField path="TELESCOPE_QUEUE" type="string">
+  Specific queue name for Telescope jobs
+</ParamField>
+
+<ParamField path="TELESCOPE_QUEUE_DELAY" type="integer" default="10">
+  Delay (in seconds) before processing Telescope entries
+</ParamField>
+
+### Watchers
+
+Telescope includes numerous watchers that can be individually enabled or disabled. All are enabled by default.
+
+<ParamField path="TELESCOPE_BATCH_WATCHER" type="boolean" default="true">
+  Monitor batch job execution
+</ParamField>
+
+<ParamField path="TELESCOPE_CACHE_WATCHER" type="boolean" default="true">
+  Monitor cache operations (hits, misses, writes)
+</ParamField>
+
+<ParamField path="TELESCOPE_CLIENT_REQUEST_WATCHER" type="boolean" default="true">
+  Monitor outgoing HTTP requests
+</ParamField>
+
+<ParamField path="TELESCOPE_COMMAND_WATCHER" type="boolean" default="true">
+  Monitor Artisan command execution
+</ParamField>
+
+<ParamField path="TELESCOPE_DUMP_WATCHER" type="boolean" default="true">
+  Capture `dump()` and `dd()` output
+</ParamField>
+
+<ParamField path="TELESCOPE_DUMP_WATCHER_ALWAYS" type="boolean" default="false">
+  Always show dumps in Telescope, even in production
+</ParamField>
+
+<ParamField path="TELESCOPE_EVENT_WATCHER" type="boolean" default="true">
+  Monitor dispatched events
+</ParamField>
+
+<ParamField path="TELESCOPE_EXCEPTION_WATCHER" type="boolean" default="true">
+  Capture exceptions and errors
+</ParamField>
+
+<ParamField path="TELESCOPE_GATE_WATCHER" type="boolean" default="true">
+  Monitor authorization gates and policies
+</ParamField>
+
+<ParamField path="TELESCOPE_JOB_WATCHER" type="boolean" default="true">
+  Monitor queued jobs
+</ParamField>
+
+<ParamField path="TELESCOPE_LOG_WATCHER" type="boolean" default="true">
+  Capture log entries at `error` level and above
+</ParamField>
+
+<ParamField path="TELESCOPE_MAIL_WATCHER" type="boolean" default="true">
+  Monitor sent emails
+</ParamField>
+
+<ParamField path="TELESCOPE_MODEL_WATCHER" type="boolean" default="true">
+  Monitor Eloquent model events and hydrations
+</ParamField>
+
+<ParamField path="TELESCOPE_NOTIFICATION_WATCHER" type="boolean" default="true">
+  Monitor sent notifications
+</ParamField>
+
+<ParamField path="TELESCOPE_QUERY_WATCHER" type="boolean" default="true">
+  Monitor database queries and highlight slow queries (>100ms)
+</ParamField>
+
+<ParamField path="TELESCOPE_REDIS_WATCHER" type="boolean" default="true">
+  Monitor Redis commands
+</ParamField>
+
+<ParamField path="TELESCOPE_REQUEST_WATCHER" type="boolean" default="true">
+  Monitor HTTP requests and responses
+</ParamField>
+
+<ParamField path="TELESCOPE_RESPONSE_SIZE_LIMIT" type="integer" default="64">
+  Maximum response size (in KB) to record. Prevents large responses from consuming storage
+</ParamField>
+
+<ParamField path="TELESCOPE_SCHEDULE_WATCHER" type="boolean" default="true">
+  Monitor scheduled task execution
+</ParamField>
+
+<ParamField path="TELESCOPE_VIEW_WATCHER" type="boolean" default="true">
+  Monitor view rendering
+</ParamField>
+
+### Ignored Paths
+
+The application ignores certain paths to reduce noise:
+
+```php
+'ignore_paths' => [
+    'livewire*',
+    'nova-api*',
+    'pulse*',
+    '__cypress__/*',
+    'auth/login/verify/*',
+],
+```
+
+### Ignored Commands
+
+Certain Artisan commands are ignored:
+
+```php
+'ignore_commands' => [
+    'migrate',
+    'db:seed',
+    'db:rebuild',
+],
+```
+
+### Data Retention
+
+Telescope data can grow quickly. Configure automatic pruning:
+
+```bash
+php artisan telescope:prune --hours=48
+```
+
+Add to your scheduler in `app/Console/Kernel.php`:
+
+```php
+$schedule->command('telescope:prune')->daily();
+```
+
+### Access Control
+
+Telescope authorization is configured in `app/Providers/TelescopeServiceProvider.php`. By default, it's only accessible in local environments.
+
+For staging access, update the gate:
+
+```php
+protected function gate()
+{
+    Gate::define('viewTelescope', function ($user) {
+        return in_array($user->email, [
+            'admin@northwestern.edu',
+        ]);
+    });
+}
+```
+
+<Warning>
+  Never enable Telescope in production without strict access controls. It exposes:
+  - Database queries and data
+  - Environment variables
+  - API keys and secrets
+  - User session data
+  - Request/response payloads
+</Warning>
+
+### Performance Considerations
+
+Telescope can impact performance in high-traffic environments:
+
+1. **Disable in Production**: Set `TELESCOPE_ENABLED=false` in production
+2. **Selective Watchers**: Disable watchers you don't need
+3. **Queue Processing**: Ensure queue workers are running to process entries asynchronously
+4. **Regular Pruning**: Automatically prune old entries to prevent database bloat
+
+## Monitoring Strategy
+
+### Development
+
+- **Telescope**: Enabled for all debugging and development
+- **Sentry**: Disabled (no DSN configured)
+
+```bash
+APP_ENV=local
+TELESCOPE_ENABLED=true
+# SENTRY_LARAVEL_DSN not set
+```
+
+### Staging
+
+- **Telescope**: Enabled with access controls
+- **Sentry**: Enabled with high sample rates for thorough testing
+
+```bash
+APP_ENV=staging
+TELESCOPE_ENABLED=true
+SENTRY_LARAVEL_DSN=https://...@sentry.io/staging
+SENTRY_TRACES_SAMPLE_RATE=0.5
+```
+
+### Production
+
+- **Telescope**: Disabled
+- **Sentry**: Enabled with conservative sample rates
+
+```bash
+APP_ENV=production
+TELESCOPE_ENABLED=false
+SENTRY_LARAVEL_DSN=https://...@sentry.io/production
+SENTRY_TRACES_SAMPLE_RATE=0.1
+SENTRY_PROFILES_SAMPLE_RATE=0.05
+```
+
+## Troubleshooting
+
+### Sentry Not Capturing Errors
+
+Check:
+1. `SENTRY_LARAVEL_DSN` is correctly set
+2. DNS is valid and project exists
+3. Application has internet connectivity
+4. Check `storage/logs/laravel.log` for Sentry errors
+
+### Telescope Not Recording Entries
+
+Check:
+1. `TELESCOPE_ENABLED=true` is set
+2. Database migrations have run: `php artisan migrate`
+3. Queue workers are running: `php artisan queue:work`
+4. Watchers are enabled in configuration
+5. Path is not in `ignore_paths`
+
+### High Sentry Quota Usage
+
+Reduce sample rates:
+
+```bash
+SENTRY_TRACES_SAMPLE_RATE=0.05
+SENTRY_PROFILES_SAMPLE_RATE=0.01
+```
+
+Or filter specific transactions in `config/sentry.php`:
+
+```php
+'ignore_transactions' => [
+    '/api/high-traffic-endpoint',
+],
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Health Checks" icon="heart-pulse" href="/deployment/health-checks">
+    Configure automated health monitoring and alerts
+  </Card>
+  <Card title="Environment Configuration" icon="gear" href="/deployment/environment-configuration">
+    Complete environment variable reference
+  </Card>
+</CardGroup>

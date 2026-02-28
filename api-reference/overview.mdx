@@ -1,0 +1,329 @@
+---
+title: 'API Overview'
+description: 'Production-ready REST API with Bearer token authentication and RFC 9457 error handling'
+---
+
+## Introduction
+
+The Northwestern Laravel Starter provides a RESTful API with enterprise-grade security, comprehensive logging, and standardized error responses. All API endpoints are versioned and follow consistent patterns for authentication, error handling, and rate limiting.
+
+## Base URL
+
+All API requests are made to:
+
+```
+POST {baseUrl}/api/v1
+```
+
+Replace `{baseUrl}` with your application's base URL:
+
+- **Local Development:** `http://localhost`
+- **Production:** Your configured `APP_URL` environment variable
+
+### API Versioning
+
+The API uses URL-based versioning with the `/v1` prefix. This ensures backward compatibility as the API evolves. All endpoints documented here are part of API version 1.
+
+## Quick Start
+
+Make your first API request:
+
+```bash
+curl -X GET "{baseUrl}/api/v1/me" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Accept: application/json"
+```
+
+<ResponseExample>
+```json
+{
+  "id": 1,
+  "name": "John Doe",
+  "email": "john.doe@northwestern.edu",
+  "netid": "jdoe",
+  "auth_type": "api",
+  "created_at": "2024-01-15T10:30:00.000000Z",
+  "updated_at": "2024-01-15T10:30:00.000000Z"
+}
+```
+</ResponseExample>
+
+## Available Endpoints
+
+### User Endpoints
+
+<ParamField path="GET /api/v1/me" type="endpoint">
+  Get authenticated user profile information
+</ParamField>
+
+### Access Token Management
+
+<ParamField path="GET /api/v1/me/tokens" type="endpoint">
+  List all access tokens for authenticated user
+</ParamField>
+
+<ParamField path="POST /api/v1/me/tokens" type="endpoint">
+  Create a new access token with optional IP restrictions
+</ParamField>
+
+<ParamField path="GET /api/v1/me/tokens/{token}" type="endpoint">
+  Get details for a specific access token
+</ParamField>
+
+<ParamField path="DELETE /api/v1/me/tokens/{token}" type="endpoint">
+  Revoke an access token immediately
+</ParamField>
+
+### Health Check
+
+<ParamField path="GET /api/health" type="endpoint">
+  Public health check endpoint (no authentication required)
+</ParamField>
+
+## API Configuration
+
+The API can be globally controlled via environment configuration:
+
+<ParamField path="API_ENABLED" type="boolean" default="true">
+  Master switch for all API functionality. When `false`, all API routes return 503 Service Unavailable.
+</ParamField>
+
+<ParamField path="API_AUTH_REALM" type="string" default="{app.name} API">
+  Authentication realm identifier shown in `WWW-Authenticate` headers and token expiration notifications.
+</ParamField>
+
+**Configuration:** `config/api.php:29`
+
+## Request Format
+
+### Required Headers
+
+All authenticated API requests must include:
+
+```http
+Authorization: Bearer YOUR_ACCESS_TOKEN
+Accept: application/json
+```
+
+### Content-Type
+
+For requests with a body (POST, PUT, PATCH), include:
+
+```http
+Content-Type: application/json
+```
+
+### Example Request
+
+```bash
+curl -X POST "{baseUrl}/api/v1/me/tokens" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Production API Token",
+    "expires_at": "2025-12-31T23:59:59Z",
+    "allowed_ips": ["192.168.1.0/24", "10.0.0.1"]
+  }'
+```
+
+## Response Format
+
+All API responses are JSON formatted with consistent structure:
+
+### Success Response
+
+```json
+{
+  "id": 1,
+  "name": "Production API Token",
+  "expires_at": "2025-12-31T23:59:59.000000Z",
+  "last_used_at": null,
+  "usage_count": 0,
+  "created_at": "2024-01-15T10:30:00.000000Z"
+}
+```
+
+### Error Response
+
+All errors follow the [RFC 9457](/api-reference/errors) Problem Details format:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Authentication failed",
+  "instance": "/api/v1/me",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+## Middleware Stack
+
+All protected API endpoints pass through this middleware pipeline:
+
+1. **EnsureApiEnabled** - Checks if API is globally enabled
+2. **LogsApiRequests** - Records request metadata for troubleshooting
+3. **AuthenticatesAccessTokens** - Validates Bearer token and IP restrictions
+
+**Implementation:** `routes/api.php:32`
+
+### Authentication Flow
+
+1. Client sends request with `Authorization: Bearer {token}` header
+2. Middleware validates token format and presence
+3. Token is hashed using HMAC-SHA256 and looked up in database
+4. System verifies token is not expired and user is active
+5. IP address is checked against token's `allowed_ips` (if configured)
+6. Token usage metadata is updated (`last_used_at`, `usage_count`, `last_ip_used`)
+7. User is authenticated for the request
+
+**Implementation:** `app/Domains/Auth/Http/Middleware/AuthenticatesAccessTokens.php:48`
+
+## Key Features
+
+### Security
+
+- **Bearer Token Authentication** - HMAC-SHA256 hashed access tokens
+- **IP Allowlists** - Optional IP-based access control with CIDR support
+- **Token Expiration** - Automated expiration with notification system
+- **Usage Tracking** - Monitor token usage patterns and anomalies
+
+See [Authentication](/api-reference/authentication) for details.
+
+### Error Handling
+
+- **RFC 9457 Compliant** - Standardized Problem Details responses
+- **Trace IDs** - Unique identifiers for request correlation
+- **Detailed Validation** - Field-specific error messages for 422 responses
+- **Consistent Structure** - All errors follow same format
+
+See [Error Responses](/api-reference/errors) for complete error documentation.
+
+### Request Logging
+
+- **Comprehensive Metadata** - Method, path, status, duration, user, token
+- **Performance Monitoring** - Slow request threshold tracking
+- **Failure Categorization** - Specific failure reasons for debugging
+- **Configurable Sampling** - Reduce storage for high-traffic applications
+
+See [Request Logging](/api/request-logging) for configuration options.
+
+### Rate Limiting
+
+- **Global Limits** - Default 60 requests per minute per user
+- **Endpoint-Specific** - Granular controls for sensitive operations
+- **Standard Headers** - `Retry-After` header for 429 responses
+- **Configurable Windows** - Per minute, hour, or day limits
+
+See [Rate Limiting](/api/rate-limiting) for limit details.
+
+## Service Availability
+
+The API can be temporarily disabled for maintenance:
+
+```bash
+# Disable API
+API_ENABLED=false
+
+# Enable API
+API_ENABLED=true
+```
+
+When disabled, all API routes return:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Service Unavailable",
+  "status": 503,
+  "detail": "Service temporarily unavailable",
+  "instance": "/api/v1/me"
+}
+```
+
+**Response headers:**
+```http
+Retry-After: 3600
+```
+
+**Implementation:** `app/Http/Middleware/EnsureApiEnabled.php:21`
+
+## Getting Started
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api-reference/authentication">
+    Set up Bearer token authentication for API access
+  </Card>
+  <Card title="Error Responses" icon="triangle-exclamation" href="/api-reference/errors">
+    Understand RFC 9457 error format and status codes
+  </Card>
+  <Card title="Access Tokens" icon="fingerprint" href="/api/access-tokens">
+    Create and manage API access tokens
+  </Card>
+  <Card title="Request Logging" icon="list" href="/api/request-logging">
+    Configure request logging and monitoring
+  </Card>
+</CardGroup>
+
+## Example: Complete Workflow
+
+```bash
+# 1. Create access token (via web UI or seeded token)
+# Receive token: sk_live_abc123xyz...
+
+# 2. Authenticate and get user info
+curl -X GET "{baseUrl}/api/v1/me" \
+  -H "Authorization: Bearer sk_live_abc123xyz..." \
+  -H "Accept: application/json"
+
+# 3. List existing tokens
+curl -X GET "{baseUrl}/api/v1/me/tokens" \
+  -H "Authorization: Bearer sk_live_abc123xyz..." \
+  -H "Accept: application/json"
+
+# 4. Create new token with IP restrictions
+curl -X POST "{baseUrl}/api/v1/me/tokens" \
+  -H "Authorization: Bearer sk_live_abc123xyz..." \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "CI/CD Pipeline Token",
+    "expires_at": "2025-06-30T23:59:59Z",
+    "allowed_ips": ["192.168.1.0/24"]
+  }'
+
+# 5. Revoke token when no longer needed
+curl -X DELETE "{baseUrl}/api/v1/me/tokens/2" \
+  -H "Authorization: Bearer sk_live_abc123xyz..." \
+  -H "Accept: application/json"
+```
+
+## Implementation Files
+
+Key source files for the API implementation:
+
+- **`routes/api.php`** - API route definitions and middleware
+- **`config/api.php`** - API configuration (auth, logging, tokens)
+- **`app/Domains/Auth/Http/Middleware/AuthenticatesAccessTokens.php`** - Bearer token authentication
+- **`app/Domains/Core/Exceptions/ProblemDetailsRenderer.php`** - RFC 9457 error handler
+- **`app/Http/Responses/ProblemDetails.php`** - Problem Details response builder
+- **`app/Http/Middleware/EnsureApiEnabled.php`** - API availability check
+
+## Next Steps
+
+<Steps>
+  <Step title="Set up authentication">
+    Learn how to [authenticate API requests](/api-reference/authentication) with Bearer tokens
+  </Step>
+  <Step title="Understand errors">
+    Review [error response format](/api-reference/errors) and status codes
+  </Step>
+  <Step title="Create access tokens">
+    Generate and [manage access tokens](/api/access-tokens) for your application
+  </Step>
+  <Step title="Configure logging">
+    Set up [request logging](/api/request-logging) for troubleshooting
+  </Step>
+</Steps>

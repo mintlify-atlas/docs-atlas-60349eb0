@@ -1,0 +1,614 @@
+---
+title: Configuration System
+description: Understanding the Northwestern Laravel Starter configuration architecture
+---
+
+The Northwestern Laravel Starter provides a comprehensive configuration system that controls authentication methods, API features, Northwestern integrations, and application behavior. Configuration is organized by functional area and supports environment-specific overrides.
+
+## Configuration Structure
+
+Configuration files are located in the `config/` directory and organized by feature area:
+
+```
+config/
+├── api.php                  # API-specific configuration
+├── app.php                  # Core application settings
+├── audit.php                # Audit logging configuration
+├── auth.php                 # Authentication configuration
+├── database.php             # Database connections
+├── health.php               # Health check endpoints
+├── local-auth.php           # Local authentication settings
+├── nusoa.php                # Northwestern API integrations
+├── permission.php           # Role and permission system
+├── platform.php             # Platform-wide settings
+├── rate-limiting.php        # Rate limiting rules
+├── sentry.php               # Error tracking
+├── support.php              # Support ticket system
+└── ...                      # Other Laravel defaults
+```
+
+## Key Configuration Files
+
+### Platform Configuration
+
+The `config/platform.php` file contains application-wide settings:
+
+```php config/platform.php
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Production Application URL
+    |--------------------------------------------------------------------------
+    |
+    | This value is the absolute, stable URL of the live, production environment.
+    | It is used by non-production environments (staging, QA) for redirects,
+    | email links, and general information about the application's true home.
+    |
+    */
+    'production_url' => env('PRODUCTION_URL', 'https://northwestern.edu'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Date / Time Display Format
+    |--------------------------------------------------------------------------
+    */
+    'datetime_display_format' => 'M j, Y g:i A',
+
+    // Default timezone assigned to users
+    'default_user_timezone' => env('DEFAULT_USER_TIMEZONE', 'America/Chicago'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Stakeholder Accounts
+    |--------------------------------------------------------------------------
+    |
+    | These configuration values define special application stakeholders such as
+    | Super Administrators. They are primarily used during seeding.
+    |
+    | `SUPER_ADMIN_NETIDS` should be a comma-separated list of NetIDs.
+    |
+    */
+    'stakeholders' => [
+        'super_admins' => env('SUPER_ADMIN_NETIDS', ''),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Wildcard Photo Sync
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, the application will attempt to store user Wildcard photos
+    | in the object storage and sync them with the user record.
+    |
+    */
+    'wildcard_photo_sync' => env('WILDCARD_PHOTO_SYNC_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Environment Lockdown
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, users without non-default roles cannot access the
+    | application and are instead shown a lockdown page. This is useful for
+    | staging/demo environments to prevent unauthorized access.
+    |
+    */
+    'lockdown' => [
+        'enabled' => env('ENVIRONMENT_LOCKDOWN_ENABLED', match (env('APP_ENV')) {
+            'production', 'local', 'testing', 'ci' => false,
+            default => true,
+        }),
+
+        // Named routes that bypass lockdown
+        'exempted_routes' => [
+            'login-oauth-redirect',
+            'login-oauth-callback',
+            'logout',
+            // ...
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Mail Capture URL
+    |--------------------------------------------------------------------------
+    |
+    | This setting controls whether a link to the MailPit server (or similar)
+    | is shown in the navigation to all users.
+    |
+    */
+    'mail-capture' => [
+        'url' => env('MAIL_CAPTURE_URL'),
+    ],
+];
+```
+
+**Key Features:**
+
+- **Environment Lockdown** - Restrict non-production environments to authorized users
+- **Stakeholder Management** - Define super admins via environment variables
+- **Timezone Configuration** - Default user timezone settings
+- **Production URL** - Reference for email links and redirects
+
+### Local Authentication Configuration
+
+The `config/local-auth.php` file controls passwordless authentication:
+
+```php config/local-auth.php
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Local User Authentication
+    |--------------------------------------------------------------------------
+    |
+    | Enable passwordless authentication for external (non-Northwestern) users.
+    | When enabled, administrators can create local user accounts that can
+    | authenticate using a verification code sent via email.
+    |
+    */
+
+    // Enable/disable local authentication system
+    'enabled' => env('LOCAL_AUTH_ENABLED', true),
+
+    // Use a fixed, predictable verification code (e.g. "123456") instead of random codes.
+    // Useful for local development and CI where you need to repeatedly verify codes.
+    'use_fixed_code' => (bool) env('LOCAL_AUTH_USE_FIXED_CODE', false),
+
+    // Maximum requests per hour (applies to both form submissions and code sends)
+    'rate_limit_per_hour' => env('LOCAL_AUTH_RATE_LIMIT_PER_HOUR', 10),
+
+    // Where to send users after a successful login (route name or path)
+    'redirect_after_login' => env('LOCAL_AUTH_REDIRECT_AFTER_LOGIN', '/'),
+
+    'code' => [
+        // Number of digits in the verification code
+        'digits' => (int) env('LOCAL_AUTH_CODE_DIGITS', 6),
+
+        // Minutes before the code expires
+        'expires_in_minutes' => (int) env('LOCAL_AUTH_CODE_EXPIRES_MINUTES', 10),
+
+        // Maximum failed attempts before lockout
+        'max_attempts' => (int) env('LOCAL_AUTH_CODE_MAX_ATTEMPTS', 8),
+
+        // Minutes a challenge stays locked after max attempts
+        'lock_minutes' => (int) env('LOCAL_AUTH_CODE_LOCK_MINUTES', 15),
+
+        // Cooldown before resending another code
+        'resend_cooldown_seconds' => (int) env('LOCAL_AUTH_CODE_RESEND_COOLDOWN', 30),
+
+        // Days to retain login challenge records before pruning
+        'retention_days' => (int) env('LOGIN_CHALLENGE_RETENTION_DAYS', 30),
+    ],
+];
+```
+
+**Key Features:**
+
+- **Feature Toggle** - Enable/disable local authentication
+- **Development Mode** - Fixed codes for testing
+- **Rate Limiting** - Prevent abuse
+- **Security Controls** - Attempt limits, expiration, lockout
+- **Data Retention** - Automatic cleanup of old challenges
+
+### Support Configuration
+
+The `config/support.php` file controls the support ticket system:
+
+```php config/support.php
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Feature Toggle
+    |--------------------------------------------------------------------------
+    |
+    | When disabled, no support routes are registered and no UI elements
+    | are rendered. Set to true in projects that want the contact form.
+    |
+    */
+    'enabled' => (bool) env('SUPPORT_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Limited Support Warning
+    |--------------------------------------------------------------------------
+    |
+    | When true, displays a warning banner on the contact form indicating
+    | that support is limited in this environment.
+    |
+    */
+    'limited_support_warning' => (bool) env(
+        'SUPPORT_LIMITED_WARNING', 
+        env('APP_ENV') !== 'production'
+    ),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Gateway Driver
+    |--------------------------------------------------------------------------
+    |
+    | The ticket system backend to use for creating support tickets.
+    | Supported: "mail", "team-dynamix"
+    |
+    */
+    'driver' => env('SUPPORT_DRIVER', 'mail'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Mail Gateway
+    |--------------------------------------------------------------------------
+    */
+    'mail' => [
+        'to' => env('SUPPORT_MAIL_TO', 'your-team@northwestern.edu'),
+        'reference_prefix' => env('SUPPORT_REFERENCE_PREFIX', 'SUP'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | TeamDynamix Gateway
+    |--------------------------------------------------------------------------
+    */
+    'team-dynamix' => [
+        'assign_to_group' => env('TDX_ASSIGNEE_ID'),
+        'ticket_type' => env('TDX_TICKET_TYPE', 'Default'),
+        'form_type' => env('TDX_FORM_TYPE', 'NU Base Service Request'),
+        'ticket_status' => env('TDX_TICKET_STATUS', 'New'),
+        'ticket_priority' => env('TDX_TICKET_PRIORITY', 'Low (P4)'),
+        'service' => env('TDX_SERVICE', env('APP_NAME')),
+    ],
+];
+```
+
+**Key Features:**
+
+- **Feature Toggle** - Enable/disable support system
+- **Multiple Gateways** - Mail or TeamDynamix backends
+- **Environment Warnings** - Alert users about limited support
+- **Flexible Configuration** - Customize ticket properties
+
+### Northwestern Integration Configuration
+
+The `config/nusoa.php` file configures Northwestern-specific integrations:
+
+```php config/nusoa.php
+return [
+    'directorySearch' => [
+        'baseUrl' => env(
+            'DIRECTORY_SEARCH_URL', 
+            'https://northwestern-prod.apigee.net/directory-search'
+        ),
+        'apiKey' => env('DIRECTORY_SEARCH_API_KEY'),
+        'healthCheckNetid' => env('DIRECTORY_SEARCH_HEALTH_CHECK_NETID', 'swd2981'),
+    ],
+
+    'sso' => [
+        // Valid options are: classic, apigee, forgerock-direct
+        'strategy' => env('WEBSSO_STRATEGY', 'apigee'),
+        'openAmBaseUrl' => env('WEBSSO_URL_BASE', 'https://uat-nusso.it.northwestern.edu'),
+
+        // ForgeRock configuration
+        'realm' => env('WEBSSO_REALM', 'northwestern'),
+        'authTree' => env(
+            'WEBSSO_TREE', 
+            env('DUO_ENABLED', false) ? 'ldap-and-duo' : 'ldap-registry'
+        ),
+        'cookieName' => env('WEBSSO_COOKIE_NAME', 'nusso'),
+
+        // Apigee configuration
+        'apigeeBaseUrl' => env(
+            'WEBSSO_API_URL_BASE', 
+            'https://northwestern-prod.apigee.net/agentless-websso'
+        ),
+        'apigeeApiKey' => env('WEBSSO_API_KEY'),
+    ],
+
+    'eventHub' => [
+        'mock' => env('EVENT_HUB_MOCK_ENABLED', env('APP_ENV') == 'local'),
+        'baseUrl' => env('EVENT_HUB_BASE_URL'),
+        'apiKey' => env('EVENT_HUB_API_KEY'),
+        'hmacVerificationSharedSecret' => env('EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET'),
+        'hmacVerificationHeader' => env('EVENT_HUB_HMAC_VERIFICATION_HEADER', 'X-HMAC-Signature'),
+        'hmacVerificationAlgorithmForRegistration' => env(
+            'EVENT_HUB_HMAC_VERIFICATION_ALGORITHM_TYPE_REGISTRATION', 
+            'HmacSHA256'
+        ),
+        'hmacVerificationAlgorithmForPHPHashHmac' => env(
+            'EVENT_HUB_HMAC_VERIFICATION_ALGORITHM_TYPE_PHP', 
+            'sha256'
+        ),
+    ],
+];
+```
+
+**Key Features:**
+
+- **Directory Search** - Northwestern person lookup
+- **WebSSO** - Multiple authentication strategies
+- **EventHub** - Event publishing and webhook registration
+- **Environment-Specific** - Different configs for dev/prod
+
+## Configuration Patterns
+
+### Environment-Based Defaults
+
+Many configurations use `match` expressions for environment-specific defaults:
+
+```php
+'lockdown' => [
+    'enabled' => env('ENVIRONMENT_LOCKDOWN_ENABLED', match (env('APP_ENV')) {
+        'production', 'local', 'testing', 'ci' => false,
+        default => true, // Enabled for staging, QA, etc.
+    }),
+],
+```
+
+### Feature Toggles
+
+Optional features use boolean flags:
+
+```php
+'enabled' => (bool) env('SUPPORT_ENABLED', false),
+'wildcard_photo_sync' => env('WILDCARD_PHOTO_SYNC_ENABLED', false),
+```
+
+### Gateway Selection
+
+Service implementations can be swapped via configuration:
+
+```php
+'driver' => env('SUPPORT_DRIVER', 'mail'),
+'strategy' => env('WEBSSO_STRATEGY', 'apigee'),
+```
+
+The application uses these values to resolve the correct implementation from the service container.
+
+## Accessing Configuration
+
+Configuration values are accessed using Laravel's `config()` helper:
+
+```php
+// Get a simple value
+$enabled = config('support.enabled');
+
+// Get a nested value
+$digits = config('local-auth.code.digits');
+
+// Provide a default
+$timeout = config('api.timeout', 30);
+
+// Get all values from a file
+$platformConfig = config('platform');
+```
+
+### In Actions
+
+Actions typically access configuration directly:
+
+```php app/Domains/Auth/Actions/Local/IssueLoginChallenge.php
+final readonly class IssueLoginChallenge
+{
+    public function __invoke(string $email, ?string $ip, ?string $userAgent): LoginChallenge
+    {
+        $rateLimitKey = "login-code:{$email}";
+        $maxAttempts = (int) config('local-auth.rate_limit_per_hour');
+
+        if (RateLimiter::tooManyAttempts($rateLimitKey, $maxAttempts)) {
+            // Handle rate limit
+        }
+
+        $digits = (int) config('local-auth.code.digits', 6);
+        $expires = (int) config('local-auth.code.expires_in_minutes', 10);
+        
+        // ...
+    }
+}
+```
+
+### In Service Providers
+
+Service providers use configuration to register implementations:
+
+```php app/Providers/AppServiceProvider.php
+public function register(): void
+{
+    $this->app->singleton(
+        OneTimeCodeGenerator::class,
+        config('local-auth.use_fixed_code')
+            ? FixedNumericOneTimeCodeGenerator::class
+            : RandomNumericOneTimeCodeGenerator::class,
+    );
+}
+```
+
+## Configuration Validation
+
+The starter kit includes configuration validators to catch issues early:
+
+```
+app/Domains/Core/Services/ConfigValidation/
+├── AppKeyValidator.php
+├── DatabaseValidator.php
+├── EnvironmentVariablesValidator.php
+├── EventHubValidator.php
+├── FilesystemValidator.php
+└── QueueValidator.php
+```
+
+These validators run during application bootstrap (in non-production environments) and health checks to ensure:
+
+- Required environment variables are set
+- Database connections are valid
+- API credentials are configured
+- File storage is accessible
+- Queue connections work
+
+<Warning>
+  Configuration validation is disabled in production to avoid performance overhead. Run health checks regularly to catch configuration issues.
+</Warning>
+
+## Environment Variables
+
+Configuration files pull values from environment variables defined in `.env`:
+
+```bash .env
+# Platform Configuration
+APP_ENV=local
+APP_NAME="Northwestern Laravel Starter"
+PRODUCTION_URL=https://your-app.northwestern.edu
+SUPER_ADMIN_NETIDS=abc123,def456
+
+# Local Authentication
+LOCAL_AUTH_ENABLED=true
+LOCAL_AUTH_USE_FIXED_CODE=true  # Only in development!
+LOCAL_AUTH_RATE_LIMIT_PER_HOUR=10
+
+# Support System
+SUPPORT_ENABLED=true
+SUPPORT_DRIVER=mail
+SUPPORT_MAIL_TO=support@northwestern.edu
+
+# Northwestern APIs
+DIRECTORY_SEARCH_API_KEY=your-api-key
+WEBSSO_STRATEGY=apigee
+WEBSSO_API_KEY=your-websso-key
+```
+
+<Tip>
+  Copy `.env.example` to `.env` and customize values for your environment. Never commit `.env` to version control.
+</Tip>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Sensible Defaults">
+    Provide safe default values that work for most cases:
+    
+    ```php
+    'rate_limit_per_hour' => env('LOCAL_AUTH_RATE_LIMIT_PER_HOUR', 10),
+    ```
+  </Accordion>
+  
+  <Accordion title="Document Configuration Options">
+    Include comments explaining what each option does and when to use it:
+    
+    ```php
+    /*
+    |--------------------------------------------------------------------------
+    | Environment Lockdown
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, users without non-default roles cannot access the
+    | application. Useful for staging/demo environments.
+    |
+    */
+    ```
+  </Accordion>
+  
+  <Accordion title="Type Cast Values">
+    Always cast environment values to the expected type:
+    
+    ```php
+    'enabled' => (bool) env('SUPPORT_ENABLED', false),
+    'max_attempts' => (int) env('LOCAL_AUTH_CODE_MAX_ATTEMPTS', 8),
+    ```
+  </Accordion>
+  
+  <Accordion title="Group Related Settings">
+    Use nested arrays to organize related configuration:
+    
+    ```php
+    'code' => [
+        'digits' => 6,
+        'expires_in_minutes' => 10,
+        'max_attempts' => 8,
+    ],
+    ```
+  </Accordion>
+  
+  <Accordion title="Use Feature Toggles">
+    Make optional features easy to enable/disable:
+    
+    ```php
+    if (config('support.enabled')) {
+        // Register support routes
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Adding Custom Configuration
+
+To add new configuration for your application:
+
+<Steps>
+  <Step title="Create Configuration File">
+    Create a new file in `config/`:
+    
+    ```php config/my-feature.php
+    <?php
+    
+    return [
+        'enabled' => env('MY_FEATURE_ENABLED', false),
+        
+        'options' => [
+            'timeout' => (int) env('MY_FEATURE_TIMEOUT', 30),
+            'retry_count' => (int) env('MY_FEATURE_RETRY_COUNT', 3),
+        ],
+    ];
+    ```
+  </Step>
+  
+  <Step title="Add Environment Variables">
+    Document the variables in `.env.example`:
+    
+    ```bash .env.example
+    # My Feature Configuration
+    MY_FEATURE_ENABLED=true
+    MY_FEATURE_TIMEOUT=30
+    MY_FEATURE_RETRY_COUNT=3
+    ```
+  </Step>
+  
+  <Step title="Access Configuration">
+    Use the config helper in your code:
+    
+    ```php
+    if (config('my-feature.enabled')) {
+        $timeout = config('my-feature.options.timeout');
+        // Use the configuration
+    }
+    ```
+  </Step>
+  
+  <Step title="Add Validation (Optional)">
+    Create a validator in `app/Domains/Core/Services/ConfigValidation/`:
+    
+    ```php
+    class MyFeatureValidator
+    {
+        public function validate(): void
+        {
+            if (config('my-feature.enabled') && !env('MY_FEATURE_API_KEY')) {
+                throw new RuntimeException('MY_FEATURE_API_KEY is required');
+            }
+        }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Environment Setup" icon="gear" href="/essentials/environment-setup">
+    Configure your development environment
+  </Card>
+  <Card title="Architecture Overview" icon="sitemap" href="/architecture/overview">
+    Understand the overall architectural approach
+  </Card>
+  <Card title="Development Guide" icon="code" href="/development">
+    Start building with the starter kit
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/deployment/overview">
+    Deploy your configured application
+  </Card>
+</CardGroup>

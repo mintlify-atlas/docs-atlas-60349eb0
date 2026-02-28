@@ -1,0 +1,355 @@
+---
+title: Filament Admin Panel
+description: Learn how to work with the Filament v3 admin panel for managing application data
+---
+
+The Northwestern Laravel Starter includes a fully-configured [Filament v3](https://filamentphp.com/) admin panel that provides a modern, intuitive interface for managing application data.
+
+## Overview
+
+Filament is a collection of full-stack components for building Laravel admin panels. The starter kit includes pre-built resources, pages, and widgets for common administrative tasks.
+
+### Key Features
+
+<CardGroup cols={2}>
+  <Card title="Resources" icon="database">
+    Pre-built CRUD interfaces for users, roles, audits, API logs, and support tickets
+  </Card>
+  <Card title="Dashboard" icon="chart-line">
+    Customizable dashboard with widgets for metrics and analytics
+  </Card>
+  <Card title="Global Search" icon="magnifying-glass">
+    Search across all resources from the navigation bar
+  </Card>
+  <Card title="Exports" icon="download">
+    Export data to Excel/CSV with configured exporters
+  </Card>
+</CardGroup>
+
+## Filament Resources
+
+The starter kit includes the following pre-configured resources:
+
+### User Management Resources
+
+Located in `app/Filament/Resources/`:
+
+**Users** (`Users/UserResource.php`)
+- View and manage user accounts
+- Assign roles and permissions
+- Track login history and API access tokens
+- View audit logs for user actions
+- Relation managers for: Roles, Audits, Login Records, Access Tokens, API Request Logs
+
+**Roles** (`Roles/RoleResource.php`)
+- Create and manage roles
+- Assign permissions to roles
+- Track which users have specific roles
+- Export role configurations
+
+**User Login Records** (`UserLoginRecords/UserLoginRecordResource.php`)
+- View authentication history
+- Track login methods (SSO, email verification, etc.)
+- Monitor failed login attempts
+- Analyze login patterns
+
+### API Resources
+
+**Access Tokens** (`AccessTokens/`)
+- Managed through actions on the User resource
+- Create, rotate, and revoke API tokens
+- Configure IP restrictions with CIDR notation
+- Set expiration dates and scopes
+
+**API Request Logs** (`ApiRequestLogs/ApiRequestLogResource.php`)
+- Monitor API usage and performance
+- View request/response details
+- Filter by endpoint, status, user, and date range
+- Includes widgets for request metrics:
+  - `ApiRequestDurationChartWidget`: Response time trends
+  - `ApiRequestsByStatusChartWidget`: Status code distribution
+  - `TopApiRequestsByEndpointChartWidget`: Most-used endpoints
+  - `SlowestApiRequestsByEndpointChartWidget`: Performance bottlenecks
+
+### Auditing Resources
+
+**Audits** (`Audits/AuditResource.php`)
+- Comprehensive audit trail of all model changes
+- View before/after values for each change
+- Filter by user, model type, event, and date
+- Export audit logs for compliance
+- Includes detailed infolist view with change history
+
+**Support Tickets** (`SupportTickets/SupportTicketResource.php`)
+- Built-in support ticket system
+- Track user issues and requests
+- Export tickets for reporting
+
+## Creating a New Resource
+
+To create a new Filament resource:
+
+```bash
+php artisan make:filament-resource Blog --generate
+```
+
+This creates:
+- `app/Filament/Resources/BlogResource.php`
+- `app/Filament/Resources/Blog/Pages/ListBlogs.php`
+- `app/Filament/Resources/Blog/Pages/CreateBlog.php`
+- `app/Filament/Resources/Blog/Pages/EditBlog.php`
+
+### Resource Structure
+
+A typical resource class includes:
+
+```php
+class BlogResource extends Resource
+{
+    protected static ?string $model = Blog::class;
+
+    protected static ?string $navigationIcon = Heroicon::OutlineNewspaper;
+
+    protected static ?string $navigationGroup = 'Content';
+
+    protected static ?int $navigationSort = 1;
+
+    public static function form(Form $form): Form
+    {
+        return $form->schema([
+            TextInput::make('title')->required(),
+            Textarea::make('content')->required(),
+            Select::make('status')
+                ->options([
+                    'draft' => 'Draft',
+                    'published' => 'Published',
+                ])
+                ->required(),
+        ]);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                TextColumn::make('title')->searchable(),
+                TextColumn::make('status')->badge(),
+                TextColumn::make('created_at')->dateTime(),
+            ])
+            ->filters([
+                SelectFilter::make('status')
+                    ->options([
+                        'draft' => 'Draft',
+                        'published' => 'Published',
+                    ]),
+            ])
+            ->actions([
+                Tables\Actions\EditAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\DeleteBulkAction::make(),
+            ]);
+    }
+}
+```
+
+## Custom Pages
+
+The starter includes custom dashboard pages:
+
+### Platform Overview
+
+`app/Filament/Pages/Platform/Overview.php` - Main dashboard with:
+- Welcome widget
+- System statistics
+- Recent activity
+
+### API Cluster Overview
+
+`app/Filament/Clusters/ApiCluster/Pages/Overview.php` - API-specific dashboard with:
+- API request metrics
+- Performance charts
+- Active tokens count
+
+## Widgets
+
+Widgets display data on dashboard pages. The starter includes:
+
+**WelcomeWidget** (`app/Filament/Widgets/WelcomeWidget.php`)
+- Displays welcome message on the main dashboard
+- Customizable view template
+
+**API Request Widgets** (in `ApiRequestLogs/Widgets/`):
+- Request duration trends
+- Status code distribution  
+- Top endpoints by request count
+- Slowest endpoints by response time
+- Filter widget for date ranges
+
+### Creating a Custom Widget
+
+```bash
+php artisan make:filament-widget StatsOverview
+```
+
+Example stats widget:
+
+```php
+class StatsOverview extends BaseWidget
+{
+    protected static ?int $sort = -2;
+
+    protected function getStats(): array
+    {
+        return [
+            Stat::make('Total Users', User::count())
+                ->description('Registered users')
+                ->descriptionIcon('heroicon-o-users')
+                ->color('success'),
+            Stat::make('Active Tokens', AccessToken::active()->count())
+                ->description('Valid API tokens')
+                ->descriptionIcon('heroicon-o-key')
+                ->color('primary'),
+        ];
+    }
+}
+```
+
+## Navigation Groups
+
+The admin panel organizes resources into logical groups using the `AdministrationNavGroup` class:
+
+**User Management**
+- Users
+- Roles  
+- User Login Records
+
+**API Management** (via ApiCluster)
+- API Request Logs
+- API Overview
+
+**Auditing**
+- Audits
+
+**Support**
+- Support Tickets
+
+## Exports
+
+Pre-configured exporters in `app/Filament/Exports/`:
+
+- `UserExporter`: Export user data
+- `RoleExporter`: Export role configurations
+- `AuditExporter`: Export audit logs
+- `ApiRequestLogExporter`: Export API request logs
+- `UserLoginRecordExporter`: Export login history
+- `SupportTicketExporter`: Export support tickets
+
+Each exporter defines:
+- Columns to include in the export
+- Data transformations
+- Export file naming
+
+## Customization
+
+### Theme Customization
+
+Filament theme customization is in `resources/css/filament/administration/theme.css`:
+
+```css
+@import '/vendor/filament/filament/resources/css/theme.css';
+
+:root {
+    --primary: 78 42 132; /* Northwestern Purple */
+}
+```
+
+### Panel Configuration
+
+The Filament panel is configured in `app/Providers/Filament/AdminPanelProvider.php`:
+
+```php
+public function panel(Panel $panel): Panel
+{
+    return $panel
+        ->default()
+        ->id('administration')
+        ->path('admin')
+        ->colors([
+            'primary' => Color::hex('#4E2A84'),
+        ])
+        ->navigationGroups([
+            NavigationGroup::make('User Management'),
+            NavigationGroup::make('API Management'),
+            NavigationGroup::make('Auditing'),
+            NavigationGroup::make('Support'),
+        ]);
+}
+```
+
+## Global Search
+
+Resources can be configured for global search by defining searchable attributes:
+
+```php
+public static function getGloballySearchableAttributes(): array
+{
+    return ['username', 'first_name', 'last_name', 'email'];
+}
+
+public static function getGlobalSearchResultTitle(Model $record): string
+{
+    return $record->full_name;
+}
+
+public static function getGlobalSearchResultDetails(Model $record): array
+{
+    return [
+        'Email' => $record->email,
+        'Role' => $record->primary_role?->name,
+    ];
+}
+```
+
+<Note>
+See the [UserResource.php:89](app/Filament/Resources/Users/UserResource.php:89) for a complete example of global search configuration.
+</Note>
+
+## Best Practices
+
+### Resource Organization
+
+- Group related functionality in subdirectories (e.g., `Users/`, `Roles/`)
+- Use separate classes for tables, forms, and infolists for better organization
+- Keep action classes in dedicated `Actions/` subdirectories
+
+### Performance
+
+- Use eager loading in table queries to avoid N+1 problems
+- Add database indexes for searchable and sortable columns
+- Use pagination for large datasets
+- Consider using `deferLoading()` for complex widgets
+
+### User Experience
+
+- Add helpful descriptions to resources
+- Use badges and colors to highlight important information
+- Provide clear navigation labels and icons
+- Include relevant filters for quick data access
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Filament Documentation" icon="book" href="https://filamentphp.com/docs">
+    Official Filament documentation for advanced features
+  </Card>
+  <Card title="Northwestern Theme" icon="palette" href="/frontend/northwestern-theme">
+    Customize the admin panel with Northwestern branding
+  </Card>
+  <Card title="User Management" icon="users" href="/users/overview">
+    Learn about user management features
+  </Card>
+  <Card title="Audit Trail" icon="list" href="/auditing/audit-trail">
+    Understanding the audit logging system
+  </Card>
+</CardGroup>

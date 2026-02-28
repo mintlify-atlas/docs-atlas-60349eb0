@@ -1,0 +1,264 @@
+---
+title: Installation
+description: Install Northwestern Laravel Starter and set up your development environment
+---
+
+## Prerequisites
+
+Before installing Northwestern Laravel Starter, ensure you have the following installed on your system:
+
+- **PHP 8.4 or higher** with required extensions
+- **Composer** for PHP dependency management
+- **Node.js 25.0.0 or higher** and **pnpm 10.0.0 or higher**
+- **PostgreSQL 14 or higher** for the database
+- **Redis** for caching and queues
+
+### Required PHP Extensions
+
+The following PHP extensions are required:
+
+- `ext-ctype`
+- `ext-curl`
+- `ext-dom`
+- `ext-fileinfo`
+- `ext-filter`
+- `ext-intl`
+- `ext-json`
+- `ext-mbstring`
+- `ext-openssl`
+- `ext-pdo`
+- `ext-simplexml`
+- `ext-tokenizer`
+- `ext-xml`
+
+<Note>
+  If you're using [Laravel Herd](https://herd.laravel.com/), most of these prerequisites are already configured for you.
+</Note>
+
+## Create a New Project
+
+Create a new project using Composer's `create-project` command:
+
+```bash
+composer create-project northwestern-sysdev/northwestern-laravel-starter my-project
+```
+
+This command will:
+1. Download the Northwestern Laravel Starter template
+2. Install all PHP dependencies
+3. Copy `.env.example` to `.env`
+4. Generate an application key
+5. Run the `starter:check` command to validate your configuration
+
+<Steps>
+  <Step title="Navigate to your project">
+    Change into the newly created project directory:
+    
+    ```bash
+    cd my-project
+    ```
+  </Step>
+
+  <Step title="Install frontend dependencies">
+    Install Node.js dependencies using pnpm:
+    
+    ```bash
+    pnpm install
+    ```
+    
+    <Warning>
+      This project requires **pnpm** as the package manager. Using npm or yarn will not work due to engine restrictions defined in `package.json`.
+    </Warning>
+  </Step>
+
+  <Step title="Configure your environment">
+    Update the `.env` file with your local configuration:
+    
+    ```bash .env
+    APP_NAME="My Northwestern App"
+    APP_ENV=local
+    APP_URL=http://localhost
+    
+    DB_CONNECTION=pgsql
+    DB_HOST=127.0.0.1
+    DB_PORT=5432
+    DB_DATABASE=my_project_local
+    DB_USERNAME=your_username
+    DB_PASSWORD=your_password
+    
+    # Test database (required for PHPUnit)
+    DB_PHPUNIT_DATABASE=my_project_test
+    ```
+    
+    <Note>
+      The `DB_PHPUNIT_DATABASE` is used for running tests in isolation from your development database.
+    </Note>
+  </Step>
+
+  <Step title="Create databases">
+    Create both the development and test PostgreSQL databases:
+    
+    ```bash
+    createdb my_project_local
+    createdb my_project_test
+    ```
+    
+    If you're using Laravel Herd, you can create databases through the Herd UI or use the `psql` command.
+  </Step>
+
+  <Step title="Run migrations">
+    Run the database migrations to set up your schema:
+    
+    ```bash
+    php artisan migrate
+    ```
+    
+    This will create the following tables:
+    - `users` - User accounts
+    - `roles` and `permissions` - RBAC system
+    - `audits` - Audit trail for all model changes
+    - `user_login_records` - Login history
+    - `user_api_tokens` - API access tokens
+    - `api_request_logs` - API request tracking
+    - `login_challenges` - Passwordless login codes
+    - And more...
+  </Step>
+
+  <Step title="Seed the database (optional)">
+    Optionally seed your database with sample data:
+    
+    ```bash
+    php artisan db:seed
+    ```
+    
+    This will create default roles, permissions, and sample users for development.
+  </Step>
+</Steps>
+
+## Additional Configuration
+
+### Super Administrator Access
+
+To automatically assign the Super Administrator role to specific NetIDs during setup, add them to your `.env` file:
+
+```bash .env
+SUPER_ADMIN_NETIDS=abc123,xyz789
+```
+
+### Authentication Configuration
+
+#### Enable Local Authentication (for development)
+
+```bash .env
+LOCAL_AUTH_ENABLED=true
+```
+
+#### Configure Microsoft Entra ID SSO
+
+For production environments, configure Entra ID (formerly Azure AD) single sign-on:
+
+```bash .env
+AZURE_CLIENT_ID=your-client-id
+AZURE_CLIENT_SECRET=your-client-secret
+```
+
+### API Configuration
+
+Enable and configure API features:
+
+```bash .env
+API_ENABLED=true
+API_REQUEST_LOGGING_ENABLED=true
+API_REQUEST_LOG_RETENTION_DAYS=90
+API_REQUEST_LOGGING_SAMPLING_ENABLED=false
+API_REQUEST_LOGGING_SAMPLE_RATE=1.0
+API_ACCESS_TOKEN_EXPIRATION_NOTIFICATIONS_ENABLED=true
+```
+
+### Northwestern Directory Integration
+
+Configure Northwestern Directory search:
+
+```bash .env
+DIRECTORY_SEARCH_API_KEY=your-api-key
+WILDCARD_PHOTO_SYNC_ENABLED=false
+```
+
+### Redis Configuration
+
+Configure Redis for caching and queue processing:
+
+```bash .env
+CACHE_STORE=redis
+QUEUE_CONNECTION=redis
+REDIS_HOST=127.0.0.1
+REDIS_PASSWORD=null
+REDIS_PORT=6379
+```
+
+### S3/MinIO Storage
+
+For file storage, configure AWS S3 or MinIO:
+
+```bash .env
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+AWS_DEFAULT_REGION=us-east-1
+AWS_BUCKET=your-bucket-name
+AWS_URL=https://minio.adoes.northwestern.edu
+AWS_ENDPOINT=https://minio.adoes.northwestern.edu
+AWS_USE_PATH_STYLE_ENDPOINT=true
+```
+
+## Verify Installation
+
+Run the built-in configuration checker to verify your installation:
+
+```bash
+php artisan starter:check
+```
+
+This command validates:
+- Required PHP extensions
+- Environment configuration
+- Database connectivity
+- Queue configuration
+- Cache configuration
+- File permissions
+
+<Note>
+  The `starter:check` command automatically runs after `composer install` and `composer update` to ensure your environment is properly configured.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Start Guide"
+    icon="rocket"
+    href="/quick-start"
+  >
+    Get your application running and explore the features
+  </Card>
+  <Card
+    title="Project Structure"
+    icon="folder-tree"
+    href="/project-structure"
+  >
+    Learn about the domain-driven architecture
+  </Card>
+  <Card
+    title="Configuration"
+    icon="gear"
+    href="/configuration"
+  >
+    Dive deeper into configuration options
+  </Card>
+  <Card
+    title="Development Workflow"
+    icon="code"
+    href="/development-workflow"
+  >
+    Learn about the development tools and workflows
+  </Card>
+</CardGroup>

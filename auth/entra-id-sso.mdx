@@ -1,0 +1,263 @@
+---
+title: "Microsoft Entra ID SSO"
+description: "Configure single sign-on authentication with Microsoft Entra ID (Azure AD)"
+---
+
+The starter kit includes built-in support for Microsoft Entra ID (formerly Azure AD) single sign-on authentication using Northwestern University's SSO package. This provides seamless authentication for users with organizational credentials.
+
+## How SSO Works
+
+SSO authentication follows the OAuth 2.0 / OpenID Connect flow:
+
+<Steps>
+  <Step title="User Initiates Login">
+    User visits `/auth/type` and clicks **Sign in with NetID** which redirects to `/auth/azure-ad/redirect`.
+  </Step>
+  
+  <Step title="OAuth Redirect">
+    The application redirects to Microsoft Entra ID's authorization endpoint. The user authenticates with their organizational credentials.
+  </Step>
+  
+  <Step title="OAuth Callback">
+    Microsoft redirects back to `/auth/azure-ad/callback` with an authorization code.
+  </Step>
+  
+  <Step title="User Lookup">
+    The `WebSSOController` extracts the NetID from the OAuth response and calls `FindOrUpdateUserFromDirectory` to sync user data (app/Domains/Auth/Http/Controllers/WebSSOController.php:44).
+    
+    The lookup retries up to 3 times with 500ms delays to handle transient directory service issues.
+  </Step>
+  
+  <Step title="Session Creation">
+    On successful authentication, the controller:
+    - Logs the user in with `Auth::login()`
+    - Regenerates the session token for security
+    - Records the login event via `RecordLogin` action
+    - Redirects to the intended URL or dashboard
+  </Step>
+</Steps>
+
+## SSO Controller
+
+The `WebSSOController` extends Northwestern's `WebSSOAuthentication` trait and customizes behavior:
+
+<CodeGroup>
+```php WebSSOController
+use Northwestern\SysDev\SOA\Auth\WebSSOAuthentication;
+
+class WebSSOController extends Controller
+{
+    use WebSSOAuthentication;
+    
+    protected string $redirectTo = '/';
+    
+    /**
+     * Find or create user from directory lookup.
+     */
+    protected function findUserByNetID(
+        FindOrUpdateUserFromDirectory $action,
+        ?string $netid = null
+    ): ?Authenticatable {
+        return retry(
+            times: 3,
+            callback: fn() => $action($netid),
+            sleepMilliseconds: 500
+        );
+    }
+    
+    /**
+     * Called after successful authentication.
+     */
+    protected function authenticated(Request $request, $user): void
+    {
+        Session::regenerate();
+        Session::regenerateToken();
+        ($this->recordLogin)($user, $request);
+    }
+}
+```
+</CodeGroup>
+
+## User Provisioning
+
+SSO users are automatically provisioned from the directory service on first login. The `FindOrUpdateUserFromDirectory` action:
+
+1. Queries the directory service by NetID
+2. Creates a new user if not found, or updates existing user
+3. Syncs profile data (name, email, etc.)
+4. Assigns default roles (app/Domains/Auth/Enums/SystemRoleEnum.php:14)
+
+### Super Administrator Assignment
+
+Users listed in the `SUPER_ADMIN_NETIDS` environment variable automatically receive the `Super Administrator` role:
+
+```bash .env
+SUPER_ADMIN_NETIDS=abc123,def456,xyz789
+```
+
+Super administrators gain the `MANAGE_ALL` permission which bypasses all authorization checks.
+
+### Northwestern User Role
+
+All SSO-authenticated users automatically receive the `Northwestern User` role, which provides baseline access permissions.
+
+## Routes
+
+SSO routes are defined in `routes/auth.php`:
+
+```php
+Route::prefix('azure-ad')->group(function () {
+    Route::get('redirect', [WebSSOController::class, 'oauthRedirect'])
+        ->name('login-oauth-redirect');
+    
+    Route::post('callback', [WebSSOController::class, 'oauthCallback'])
+        ->name('login-oauth-callback')
+        ->withoutMiddleware([VerifyCsrfToken::class]);
+    
+    Route::get('oauth-logout', [WebSSOController::class, 'oauthLogout'])
+        ->name('login-oauth-logout');
+});
+```
+
+## Logout Behavior
+
+The `oauthLogout` method handles both local and remote logout:
+
+<CodeGroup>
+```php Logout Flow
+public function oauthLogout(?string $postLogoutRedirectUri = null)
+{
+    // In CI environment, skip remote logout
+    if (App::environment('ci')) {
+        Auth::logout();
+        Session::invalidate();
+        Session::regenerateToken();
+        return redirect()->route('login-selection');
+    }
+    
+    // Remote logout via Microsoft Entra ID
+    $response = $this->webSSOAuthOauthLogout(route('login-selection'));
+    Session::invalidate();
+    Session::regenerateToken();
+    
+    return $response;
+}
+```
+</CodeGroup>
+
+This ensures users are logged out from both the application and Microsoft's identity provider.
+
+## Configuration
+
+### Environment Variables
+
+SSO authentication requires these environment variables (provided by Northwestern's package):
+
+```bash .env
+# Microsoft Entra ID Configuration
+AZURE_TENANT_ID=your-tenant-id
+AZURE_CLIENT_ID=your-client-id
+AZURE_CLIENT_SECRET=your-client-secret
+AZURE_REDIRECT_URI=https://yourapp.com/auth/azure-ad/callback
+
+# Super Administrator NetIDs (comma-separated)
+SUPER_ADMIN_NETIDS=abc123,def456
+```
+
+### Directory Service Integration
+
+The system integrates with Northwestern's directory service for user data. Configure the directory search service per Northwestern's documentation.
+
+## Error Handling
+
+The SSO flow includes robust error handling:
+
+<Warning>
+  **Service Down Error**: If the directory service is unavailable after 3 retry attempts, a `ServiceDownError` is thrown with details about the failure (app/Domains/Auth/Http/Controllers/WebSSOController.php:53).
+</Warning>
+
+## Customization
+
+### Custom Post-Login Actions
+
+Extend the `authenticated()` method to add custom logic after successful login:
+
+```php
+protected function authenticated(Request $request, $user): void
+{
+    Session::regenerate();
+    Session::regenerateToken();
+    
+    ($this->recordLogin)($user, $request);
+    
+    // Add your custom logic here
+    event(new UserLoggedIn($user));
+    
+    // Return a redirect if needed
+    // return redirect()->route('dashboard');
+}
+```
+
+### Custom Redirect Logic
+
+Modify the `$redirectTo` property or override the `redirectPath()` method:
+
+```php
+protected function redirectPath(): string
+{
+    if (auth()->user()->hasRole('Admin')) {
+        return '/admin';
+    }
+    
+    return '/';
+}
+```
+
+## Testing
+
+In CI environments, the logout behavior automatically skips remote Microsoft logout to prevent test failures.
+
+## Security Considerations
+
+<Warning>
+  **CSRF Protection**: The OAuth callback endpoint disables CSRF verification as it receives POST requests from Microsoft's servers. This is safe as the OAuth flow includes state parameter validation.
+</Warning>
+
+### Session Security
+
+Session tokens are regenerated on every login to prevent session fixation attacks:
+
+```php
+Session::regenerate();
+Session::regenerateToken();
+```
+
+### Retry Logic
+
+The 3-retry mechanism with exponential backoff prevents authentication failures due to transient network or service issues while avoiding indefinite hangs.
+
+## Troubleshooting
+
+### Authentication Fails with Service Down Error
+
+1. Verify directory service is accessible
+2. Check `SUPER_ADMIN_NETIDS` configuration
+3. Review application logs for detailed error messages
+4. Confirm Azure AD credentials are correct
+
+### Users Not Getting Expected Roles
+
+1. Verify NetID is in `SUPER_ADMIN_NETIDS` if expecting super admin access
+2. Check role seeder has run: `php artisan db:seed RoleSeeder`
+3. Review role assignment logic in `FindOrUpdateUserFromDirectory`
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Roles & Permissions" icon="user-shield" href="/auth/roles-permissions">
+    Learn about role assignment and permissions
+  </Card>
+  <Card title="User Impersonation" icon="user-secret" href="/auth/impersonation">
+    Test user experiences with impersonation
+  </Card>
+</CardGroup>

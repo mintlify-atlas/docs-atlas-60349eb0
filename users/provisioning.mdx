@@ -1,0 +1,221 @@
+---
+title: 'JIT Provisioning from Directory'
+description: 'Automatic user creation and synchronization from Northwestern Directory'
+---
+
+Just-In-Time (JIT) provisioning automatically creates and updates user accounts when Northwestern community members authenticate via SSO.
+
+## How It Works
+
+When a user logs in via SSO, the application:
+
+<Steps>
+<Step title="Lookup in Directory">
+  Searches the Northwestern Directory using the NetID, email, or employee ID from the SAML response.
+</Step>
+
+<Step title="Create or Update User">
+  If the user doesn't exist, creates a new User record. If they exist, updates their information.
+</Step>
+
+<Step title="Sync Profile Data">
+  Pulls demographics, affiliations, departments, and job titles from LDAP attributes.
+</Step>
+
+<Step title="Assign Default Role">
+  Automatically assigns the "Northwestern User" system role for SSO users.
+</Step>
+
+<Step title="Run Post-Retrieval Jobs">
+  Optionally downloads profile photos and runs custom synchronization logic.
+</Step>
+</Steps>
+
+## FindOrUpdateUserFromDirectory Action
+
+The primary provisioning action is located at `app/Domains/User/Actions/Directory/FindOrUpdateUserFromDirectory.php:1`.
+
+### Usage
+
+```php
+use App\Domains\User\Actions\Directory\FindOrUpdateUserFromDirectory;
+
+$findOrUpdateUser = resolve(FindOrUpdateUserFromDirectory::class);
+
+// Find or create user by NetID
+$user = $findOrUpdateUser('abc123');
+
+// Find by email
+$user = $findOrUpdateUser('user@northwestern.edu');
+
+// Find by employee ID
+$user = $findOrUpdateUser('1234567');
+
+// Run post-retrieval jobs synchronously
+$user = $findOrUpdateUser('abc123', immediate: true);
+```
+
+### Search Types
+
+The action automatically detects the search type based on the input format:
+
+- **NetID**: Alphanumeric username (e.g., `abc123`)
+- **Email**: Contains `@` symbol
+- **Employee ID**: Numeric ID (7+ digits)
+
+Search type detection is handled by `DirectorySearchType::fromSearchValue()` in `app/Domains/User/Enums/DirectorySearchType.php:1`.
+
+## SyncUserFromDirectory Action
+
+The synchronization logic is defined at `app/Domains/User/Actions/Directory/SyncUserFromDirectory.php:1`.
+
+This action maps LDAP directory fields to User model attributes using priority-based field selection.
+
+### LDAP Attribute Mapping
+
+The following LDAP attributes are synchronized to the User model:
+
+#### Name Fields
+
+| User Attribute | LDAP Attributes (Priority Order) |
+|----------------|----------------------------------|
+| `first_name` | `givenName` (or `nuStudentGivenName` for students) |
+| `last_name` | `sn` (or `nuStudentSn` for students) |
+
+#### Identification
+
+| User Attribute | LDAP Attributes (Priority Order) |
+|----------------|----------------------------------|
+| `username` | `uid` |
+| `employee_id` | `nuStudentNumber`, `employeeNumber` |
+| `hr_employee_id` | `employeeNumber` (only if different from student number) |
+
+<Note>
+Employee IDs shorter than 7 characters are considered invalid and ignored during sync.
+</Note>
+
+#### Contact Information
+
+| User Attribute | LDAP Attributes (Priority Order) |
+|----------------|----------------------------------|
+| `email` | `mail` (or `nuStudentEmail` for students) |
+| `phone` | `telephoneNumber` (or `nuAllStudentCurrentPhone` for students) |
+
+#### Organizational Data
+
+| User Attribute | LDAP Attributes |
+|----------------|------------------|
+| `primary_affiliation` | `eduPersonPrimaryAffiliation` |
+| `departments` | `nuAllDepartmentName` |
+| `job_titles` | `nuAllTitle` (excluded for students) |
+
+### Student Priority Logic
+
+For users with `primary_affiliation` of `student`, student-specific LDAP fields take priority over general fields (defined at `app/Domains/User/Actions/Directory/SyncUserFromDirectory.php:65`):
+
+```php
+if ($user->primary_affiliation === AffiliationEnum::STUDENT) {
+    array_unshift($firstNameKeys, 'nuStudentGivenName');
+    array_unshift($lastNameKeys, 'nuStudentSn');
+    array_unshift($employeeIdKeys, 'nuStudentNumber');
+    array_unshift($emailKeys, 'nuStudentEmail');
+    array_unshift($phoneKeys, 'nuAllStudentCurrentPhone');
+    
+    // Job titles are excluded for students
+    $jobTitleKeys = [];
+}
+```
+
+## Invalid Directory Entries
+
+Some directory entries may have missing or incomplete data. This commonly affects:
+
+- Unmatriculated students
+- Certain affiliates
+- Students whose admission was canceled/revoked
+- Former employees who are no longer active
+
+Handling logic is defined at `app/Domains/User/Actions/Directory/FindOrUpdateUserFromDirectory.php:146`:
+
+### Handling Strategy
+
+<Steps>
+<Step title="Check for Required Fields">
+  Validates that `eduPersonPrimaryAffiliation` and `mail` are present.
+</Step>
+
+<Step title="Existing User Found">
+  If the user exists locally and has SSO auth type:
+  - Sets `netid_inactive` to `true`
+  - Records `directory_sync_last_failed_at` timestamp
+  - Returns the existing user record
+</Step>
+
+<Step title="No Existing User">
+  Throws `BadDirectoryEntry` exception with the NetID and available directory data.
+</Step>
+</Steps>
+
+<Note>
+Users with `netid_inactive = true` are effectively deprovisioned but retain their local history in the application.
+</Note>
+
+## Post-Retrieval Jobs
+
+After a user is successfully retrieved from the directory, optional jobs can be dispatched. These are defined at `app/Domains/User/Actions/Directory/FindOrUpdateUserFromDirectory.php:44`.
+
+### Default Jobs
+
+- **`DownloadWildcardPhotoJob`**: Downloads the user's profile photo from Wildcard (if enabled)
+
+### Adding Custom Jobs
+
+You can extend the post-retrieval process by adding jobs to the `postRetrievalJobs()` method:
+
+```php
+private function postRetrievalJobs(): array
+{
+    $jobs = [
+        // Add your custom jobs here
+        SyncUserToExternalSystem::class,
+        NotifyAdminOfNewUser::class,
+    ];
+
+    if (config('platform.wildcard_photo_sync')) {
+        $jobs[] = DownloadWildcardPhotoJob::class;
+    }
+
+    return $jobs;
+}
+```
+
+Each job must:
+- Implement `ShouldQueue`
+- Accept a `User` in its constructor
+
+## Database Migrations
+
+The users table is created by `database/migrations/0001_01_01_000000_create_users_table.php:1`.
+
+### Key Indexes
+
+```sql
+INDEX (auth_type, username)
+INDEX (email)
+```
+
+These indexes optimize lookups during the provisioning process.
+
+## Related Actions
+
+### PersistUserWithUniqueUsername
+
+Ensures username uniqueness when saving users. Located at `app/Domains/User/Actions/PersistUserWithUniqueUsername.php:1`.
+
+### CreateLocalUser
+
+Creates external users who authenticate via email verification. See `app/Domains/User/Actions/Local/CreateLocalUser.php:1`.
+
+### CreateApiUser
+
+Creates API service accounts with Bearer tokens. See `app/Domains/User/Actions/Api/CreateApiUser.php:1`.

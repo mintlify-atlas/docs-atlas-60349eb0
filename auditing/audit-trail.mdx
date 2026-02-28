@@ -1,0 +1,349 @@
+---
+title: 'Audit Trail Implementation'
+description: 'Deep dive into custom audit events, role tracking, and permission changes'
+---
+
+The Northwestern Laravel Starter extends basic model auditing with custom audit events that capture complex operations like role assignments and permission changes. These provide detailed before/after snapshots for compliance and troubleshooting.
+
+## Custom Audit Events
+
+Beyond standard CRUD operations, the system tracks specialized events:
+
+- `role_assigned` - When roles are added to users
+- `role_removed` - When roles are removed from users  
+- `permissions_modified` - When a role's permissions change
+
+### How Custom Audits Work
+
+Custom audits use Laravel Auditing's `AuditCustom` event to create structured snapshots:
+
+```php app/Domains/User/Models/Concerns/AuditsRoles.php
+private function auditRoleChange(
+    string $event,
+    array $oldRoles,
+    RoleModificationOriginEnum $origin,
+    array $context = []
+): void {
+    $freshModel = $this->fresh(['roles.role_type']);
+    $newRoles = $freshModel
+        ? $this->mapRolesToArray($freshModel->roles)
+        : [];
+
+    $auditData = [
+        'auditEvent' => $event,
+        'isCustomEvent' => true,
+        'auditCustomOld' => [
+            'roles' => $oldRoles,
+        ],
+        'auditCustomNew' => [
+            'roles' => $newRoles,
+        ],
+    ];
+
+    $this->auditCustomTags = [$origin->value];
+    $this->auditCustomContext = filled($context) ? $context : null;
+
+    Event::dispatch(new AuditCustom($this));
+}
+```
+
+## Role Assignment Auditing
+
+The `AuditsRoles` trait provides methods that automatically create audit records when user roles change.
+
+### Assigning Roles
+
+Use `assignRoleWithAudit()` instead of the standard `assignRole()`:
+
+```php
+use App\Domains\Auth\Enums\RoleModificationOriginEnum;
+
+$user->assignRoleWithAudit(
+    roles: Role::where('name', 'Administrator')->first(),
+    origin: RoleModificationOriginEnum::ADMIN_UI,
+    context: ['reason' => 'Promoted to team lead']
+);
+```
+
+**Parameters:**
+- `roles` - Single role, array of roles, or collection
+- `origin` - Why the change was made (from `RoleModificationOriginEnum`)
+- `context` - Optional associative array for additional information
+
+### Removing Roles
+
+Similarly, use `removeRoleWithAudit()`:
+
+```php
+$user->removeRoleWithAudit(
+    roles: $managerRole,
+    origin: RoleModificationOriginEnum::ADMIN_UI,
+    context: ['reason' => 'Departmental transfer']
+);
+```
+
+### Role Modification Origins
+
+The `RoleModificationOriginEnum` tracks where role changes originated:
+
+- `ADMIN_UI` - Changed through the Filament admin panel
+- `API` - Changed via API endpoint
+- `AUTOMATED_SYNC` - Changed by automated directory sync
+- `COMMAND` - Changed via Artisan command
+- `MANUAL_SCRIPT` - Changed by a one-off script or migration
+
+<Note>
+The origin is stored as a tag in the audit record, making it easy to filter and analyze role changes by source.
+</Note>
+
+### Audit Record Structure for Roles
+
+Role change audits capture complete snapshots:
+
+```json
+{
+  "event": "role_assigned",
+  "old_values": {
+    "roles": [
+      {
+        "id": 5,
+        "name": "Viewer",
+        "role_type": "Standard"
+      }
+    ]
+  },
+  "new_values": {
+    "roles": [
+      {
+        "id": 5,
+        "name": "Viewer",
+        "role_type": "Standard"
+      },
+      {
+        "id": 2,
+        "name": "Administrator",
+        "role_type": "System Managed"
+      }
+    ]
+  },
+  "tags": "admin_ui, reason: Promoted to team lead"
+}
+```
+
+## Permission Change Auditing
+
+The `AuditsPermissions` trait tracks when a role's permissions are modified.
+
+### Syncing Permissions
+
+Use `syncPermissionsWithAudit()` on role models:
+
+```php
+use App\Domains\Auth\Enums\PermissionEnum;
+
+$role->syncPermissionsWithAudit([
+    PermissionEnum::VIEW_USERS,
+    PermissionEnum::EDIT_USERS,
+    PermissionEnum::ASSIGN_ROLES,
+]);
+```
+
+This method:
+1. Captures current permissions
+2. Performs the sync operation
+3. Captures new permissions  
+4. Creates an audit record **only if changes occurred**
+
+### Permission Audit Structure
+
+Permission audits show which permissions were added or removed:
+
+```json
+{
+  "event": "permissions_modified",
+  "old_values": {
+    "permissions": [
+      {
+        "name": "view_users",
+        "label": "View Users",
+        "system_managed": true,
+        "api_relevant": false
+      }
+    ]
+  },
+  "new_values": {
+    "permissions": [
+      {
+        "name": "view_users",
+        "label": "View Users",
+        "system_managed": true,
+        "api_relevant": false
+      },
+      {
+        "name": "edit_users",
+        "label": "Edit Users",
+        "system_managed": true,
+        "api_relevant": false
+      },
+      {
+        "name": "assign_roles",
+        "label": "Assign Roles",
+        "system_managed": true,
+        "api_relevant": false
+      }
+    ]
+  }
+}
+```
+
+<Note>
+The audit includes permission metadata (system_managed, api_relevant) to provide context about the significance of each permission.
+</Note>
+
+## Trace IDs for API Requests
+
+The `Auditable` trait automatically attaches trace IDs to audit records for API requests:
+
+```php app/Domains/Core/Models/Concerns/Auditable.php
+public function transformAudit(array $data): array
+{
+    // Attach an API request trace ID if available
+    if ($traceId = Context::get(ApiRequestContext::TRACE_ID)) {
+        $data['trace_id'] = $traceId;
+    }
+    
+    // ... additional transformations
+}
+```
+
+This allows you to:
+- Correlate all database changes from a single API request
+- Troubleshoot issues by tracing request flow
+- Generate reports showing the full impact of API operations
+
+## Impersonation Tracking
+
+When an administrator impersonates another user, both identities are recorded:
+
+```php
+$data['impersonator_user_id'] = resolve('impersonate')->getImpersonatorId();
+```
+
+**Example Audit Record:**
+```json
+{
+  "user_id": 42,              // The impersonated user
+  "impersonator_user_id": 1,  // The administrator
+  "event": "updated",
+  "auditable_type": "App\\Domains\\User\\Models\\User",
+  "auditable_id": 42
+}
+```
+
+<Warning>
+Always check `impersonator_user_id` when investigating suspicious activity. Actions performed during impersonation should be attributed to the impersonator, not the impersonated user.
+</Warning>
+
+## Livewire Component Tracking
+
+For Livewire requests, the specific component is appended to the URL:
+
+```php
+if (Str::contains(
+    $data['url'] ?? '',
+    Livewire::getUpdateUri()
+) && $component = $this->extractLivewireComponentName()) {
+    $data['url'] .= '#' . $component;
+}
+```
+
+**Example URL:**
+```
+https://app.example.com/livewire/update#filament.resources.users.pages.edit-user
+```
+
+This helps identify exactly which UI component triggered the change.
+
+## Querying Audit Records
+
+### Find All Changes by a User
+
+```php
+$userAudits = Audit::where('user_id', $userId)
+    ->orderBy('created_at', 'desc')
+    ->get();
+```
+
+### Find All Changes to a Model
+
+```php
+$modelAudits = Audit::where('auditable_type', User::class)
+    ->where('auditable_id', 42)
+    ->get();
+```
+
+### Find Role Changes with Context
+
+```php
+$roleChanges = Audit::where('event', 'role_assigned')
+    ->where('tags', 'like', '%admin_ui%')
+    ->get();
+```
+
+### Trace an API Request
+
+```php
+$traceAudits = Audit::where('trace_id', $traceId)
+    ->orderBy('created_at')
+    ->get();
+```
+
+## Creating Custom Audit Events
+
+For your own complex operations, follow this pattern:
+
+```php
+use OwenIt\Auditing\Events\AuditCustom;
+use Illuminate\Support\Facades\Event;
+
+public function performComplexOperation(): void
+{
+    $oldState = $this->captureCurrentState();
+    
+    // Perform your operation
+    $this->doSomethingComplex();
+    
+    $newState = $this->captureCurrentState();
+    
+    // Create custom audit
+    $this->auditEvent = 'complex_operation_completed';
+    $this->isCustomEvent = true;
+    $this->auditCustomOld = $oldState;
+    $this->auditCustomNew = $newState;
+    
+    Event::dispatch(new AuditCustom($this));
+}
+```
+
+<Note>
+Custom events must set `isCustomEvent = true` to properly differentiate them from standard Eloquent events.
+</Note>
+
+## Best Practices
+
+1. **Always use audited methods** - Use `assignRoleWithAudit()` and `syncPermissionsWithAudit()` instead of their non-audited counterparts
+2. **Provide meaningful context** - Include relevant information in the `context` parameter
+3. **Choose appropriate origins** - Accurately categorize where changes originated
+4. **Review audit trails regularly** - Set up dashboards or reports for compliance officers
+5. **Protect audit records** - Restrict database access and use read-only replicas for reporting
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Data Security" icon="shield" href="/auditing/data-security">
+    Learn about encryption and hashing for sensitive data
+  </Card>
+  <Card title="User Management" icon="users" href="/users/overview">
+    Understand user models and permissions
+  </Card>
+</CardGroup>

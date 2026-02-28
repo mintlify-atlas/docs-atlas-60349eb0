@@ -1,0 +1,422 @@
+---
+title: 'Directory Service Integration'
+description: 'Sync user data from Northwestern University LDAP directory'
+---
+
+The Directory Service integration connects your application to Northwestern's LDAP directory through the Directory Search API, enabling user lookup and automatic data synchronization.
+
+## Overview
+
+The Directory Search integration provides:
+
+- **User Lookup**: Search by NetID, email, or employee ID
+- **Automatic Sync**: Keep user profiles up-to-date with directory data
+- **Photo Sync**: Optional Wildcard photo storage
+- **Search Types**: Support for multiple identifier types
+
+## Configuration
+
+### Environment Setup
+
+Configure the Directory Search API in your `.env` file:
+
+```bash .env
+DIRECTORY_SEARCH_URL=https://northwestern-prod.apigee.net/directory-search
+DIRECTORY_SEARCH_API_KEY=your_api_key_here
+DIRECTORY_SEARCH_HEALTH_CHECK_NETID=swd2981
+```
+
+<Steps>
+  <Step title="Request API Access">
+    Contact Northwestern IT to request Directory Search API credentials for your application.
+  </Step>
+  
+  <Step title="Configure Environment">
+    Add your API key and base URL to `.env` as shown above.
+  </Step>
+  
+  <Step title="Test Connection">
+    Run the health check to verify your configuration:
+    
+    ```bash
+    php artisan health:check
+    ```
+  </Step>
+</Steps>
+
+### Configuration Reference
+
+All Directory Search settings are in `config/nusoa.php:6-10`:
+
+<CodeGroup>
+```php config/nusoa.php
+'directorySearch' => [
+    'baseUrl' => env('DIRECTORY_SEARCH_URL', 'https://northwestern-prod.apigee.net/directory-search'),
+    'apiKey' => env('DIRECTORY_SEARCH_API_KEY'),
+    'healthCheckNetid' => env('DIRECTORY_SEARCH_HEALTH_CHECK_NETID', 'swd2981'),
+],
+```
+</CodeGroup>
+
+| Key | Description | Default |
+|-----|-------------|----------|
+| `baseUrl` | Directory Search API endpoint | `https://northwestern-prod.apigee.net/directory-search` |
+| `apiKey` | Your API key from Northwestern IT | Required |
+| `healthCheckNetid` | NetID used for health checks | `swd2981` |
+
+## User Lookup and Sync
+
+### Search Types
+
+The Directory Service supports three search types, defined in `app/Domains/User/Enums/DirectorySearchType.php:9-38`:
+
+```php
+enum DirectorySearchType: string
+{
+    case EMAIL = 'mail';          // Search by email address
+    case NETID = 'netid';         // Search by Northwestern NetID
+    case EMPLOYEE_ID = 'emplid';  // Search by employee/student ID
+}
+```
+
+The search type is automatically detected from the input:
+- Email format → `EMAIL` search
+- All digits → `EMPLOYEE_ID` search
+- Any other format → `NETID` search
+
+### Finding or Updating Users
+
+Use the `FindOrUpdateUserFromDirectory` action to look up and sync users:
+
+<CodeGroup>
+```php Example: Sync User by NetID
+use App\Domains\User\Actions\Directory\FindOrUpdateUserFromDirectory;
+
+$findUser = resolve(FindOrUpdateUserFromDirectory::class);
+
+// Look up by NetID
+$user = $findUser('abc123');
+
+// Look up by email
+$user = $findUser('user@northwestern.edu');
+
+// Look up by employee ID
+$user = $findUser('1234567');
+```
+
+```php Example: Immediate Sync
+// Synchronously run post-retrieval jobs (like photo download)
+$user = $findUser('abc123', immediate: true);
+```
+</CodeGroup>
+
+This action performs the following workflow:
+
+<Steps>
+  <Step title="Detect Search Type">
+    Automatically determines if the input is a NetID, email, or employee ID.
+  </Step>
+  
+  <Step title="Query Directory">
+    Calls the Directory Search API to fetch current user data.
+  </Step>
+  
+  <Step title="Sync User Data">
+    Updates the local user record with directory information using `SyncUserFromDirectory`.
+  </Step>
+  
+  <Step title="Run Post-Retrieval Jobs">
+    Dispatches jobs like Wildcard photo sync (if enabled).
+  </Step>
+</Steps>
+
+## User Data Synchronization
+
+The `SyncUserFromDirectory` action maps LDAP fields to your user model with intelligent field priority.
+
+### Field Mapping
+
+Directory fields are mapped to user model attributes in `app/Domains/User/Actions/Directory/SyncUserFromDirectory.php:54-105`:
+
+| User Field | Directory Fields (Priority Order) |
+|------------|-----------------------------------|
+| `username` | `uid` |
+| `first_name` | `nuStudentGivenName` (students), `givenName` |
+| `last_name` | `nuStudentSn` (students), `sn` |
+| `email` | `nuStudentEmail` (students), `mail` |
+| `phone` | `nuAllStudentCurrentPhone` (students), `telephoneNumber` |
+| `employee_id` | `nuStudentNumber`, `employeeNumber` |
+| `departments` | `nuAllDepartmentName` |
+| `job_titles` | `nuAllTitle` (not synced for students) |
+| `primary_affiliation` | `eduPersonPrimaryAffiliation` |
+
+<Info>
+  Student-specific fields take priority when `primary_affiliation` is `STUDENT`. This ensures the most relevant data is used.
+</Info>
+
+### Sync Behavior
+
+```php
+// User record after sync includes:
+$user->netid_inactive = false;
+$user->last_directory_sync_at = Carbon::now();
+```
+
+<Warning>
+  If directory data is incomplete or the NetID is invalid, existing SSO users are marked as `netid_inactive = true` and `directory_sync_last_failed_at` is recorded.
+</Warning>
+
+## Wildcard Photo Sync
+
+Optionally download and store user Wildcard photos from the directory.
+
+### Enable Photo Sync
+
+Configure in `config/platform.php:70` or via environment variable:
+
+```bash .env
+WILDCARD_PHOTO_SYNC_ENABLED=true
+```
+
+When enabled, the `DownloadWildcardPhotoJob` automatically runs after user sync.
+
+### Photo Storage
+
+Photos are stored in S3 at `wildcard-photos/{netid}.jpg` and referenced in the user model:
+
+<CodeGroup>
+```php app/Domains/User/Jobs/DownloadWildcardPhotoJob.php
+class DownloadWildcardPhotoJob implements ShouldQueue
+{
+    public function handle(DirectorySearch $directorySearch): void
+    {
+        if ($this->user->auth_type !== AuthTypeEnum::SSO || ! config('platform.wildcard_photo_sync')) {
+            return;
+        }
+
+        $userInfo = retry(3, fn () => $directorySearch->lookupByNetId($this->user->username), 100);
+        $jpegPhoto = data_get($userInfo, 'jpegPhoto');
+
+        if (filled($jpegPhoto)) {
+            $decodedPhoto = base64_decode((string) $jpegPhoto);
+            $photoS3Key = "wildcard-photos/{$this->user->username}.jpg";
+            Storage::disk('s3')->put($photoS3Key, $decodedPhoto);
+        }
+
+        $this->user->update([
+            'wildcard_photo_s3_key' => $photoS3Key,
+            'wildcard_photo_last_synced_at' => now(),
+        ]);
+    }
+}
+```
+</CodeGroup>
+
+<Steps>
+  <Step title="Enable Feature">
+    Set `WILDCARD_PHOTO_SYNC_ENABLED=true` in your `.env` file.
+  </Step>
+  
+  <Step title="Configure S3">
+    Ensure S3 storage is configured for the `s3` disk.
+  </Step>
+  
+  <Step title="Automatic Sync">
+    Photos download automatically when users log in or are synced.
+  </Step>
+</Steps>
+
+## Custom Post-Retrieval Jobs
+
+Extend the directory sync workflow by adding custom jobs in `app/Domains/User/Actions/Directory/FindOrUpdateUserFromDirectory.php:44-55`:
+
+```php
+private function postRetrievalJobs(): array
+{
+    $jobs = [
+        // Add your custom post-retrieval jobs here
+        MyCustomSyncJob::class,
+    ];
+
+    if (config('platform.wildcard_photo_sync')) {
+        $jobs[] = DownloadWildcardPhotoJob::class;
+    }
+
+    return $jobs;
+}
+```
+
+Each job must:
+- Implement `Illuminate\Contracts\Queue\ShouldQueue`
+- Accept a `User` instance in its constructor
+
+<CodeGroup>
+```php Example: Custom Post-Retrieval Job
+use App\Domains\User\Models\User;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+
+class MyCustomSyncJob implements ShouldQueue
+{
+    use Queueable;
+
+    public function __construct(
+        public User $user
+    ) {
+        //
+    }
+
+    public function handle(): void
+    {
+        // Custom logic after user is synced
+        // e.g., notify a third-party service, update related records, etc.
+    }
+}
+```
+</CodeGroup>
+
+## Error Handling
+
+### Invalid Directory Entries
+
+Some users may have incomplete directory data. The system handles these cases gracefully:
+
+<CodeGroup>
+```php Error Scenarios
+// Throws BadDirectoryEntry if:
+// - Directory data is completely missing
+// - No eduPersonPrimaryAffiliation
+// - No email address
+// - No existing user record found
+
+try {
+    $user = $findUser('invalid-netid');
+} catch (BadDirectoryEntry $e) {
+    Log::warning('Invalid directory entry', [
+        'netid' => $e->netId,
+        'data' => $e->directoryData,
+    ]);
+}
+```
+</CodeGroup>
+
+### Marking Inactive NetIDs
+
+For existing SSO users with invalid directory data:
+
+```php
+// User is retained but marked inactive
+$user->netid_inactive = true;
+$user->directory_sync_last_failed_at = now();
+```
+
+<Warning>
+  Users commonly affected by incomplete directory data:
+  - Unmatriculated students
+  - Certain affiliates
+  - Students whose admission was canceled/revoked
+  - Former employees or students
+</Warning>
+
+## Health Checks
+
+The Directory Search health check validates API connectivity in `app/Domains/Core/Health/DirectorySearchCheck.php`:
+
+```bash
+php artisan health:check
+```
+
+The check:
+1. Looks up the configured health check NetID
+2. Validates the response structure
+3. Reports any API errors
+
+<Info>
+  Configure a known-good NetID for health checks using `DIRECTORY_SEARCH_HEALTH_CHECK_NETID`.
+</Info>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="API Connection Fails">
+    **Symptom**: Health check reports API error
+    
+    **Solutions**:
+    - Verify `DIRECTORY_SEARCH_API_KEY` is correct
+    - Check network connectivity to Northwestern's Apigee gateway
+    - Confirm your IP is whitelisted with Northwestern IT
+  </Accordion>
+
+  <Accordion title="User Sync Returns Null">
+    **Symptom**: `FindOrUpdateUserFromDirectory` returns null
+    
+    **Possible Causes**:
+    - Invalid NetID/email/employee ID
+    - User has incomplete directory data
+    - User has `auth_type` of `API` (API users are excluded)
+    
+    **Check**:
+    ```php
+    $findUser = resolve(FindOrUpdateUserFromDirectory::class);
+    $user = $findUser('netid');
+    
+    if (!$user) {
+        $error = $findUser->getLastError();
+        Log::error('Directory lookup failed', ['error' => $error]);
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Photo Sync Not Working">
+    **Symptom**: Wildcard photos aren't downloading
+    
+    **Checklist**:
+    - [ ] `WILDCARD_PHOTO_SYNC_ENABLED=true` in `.env`
+    - [ ] S3 storage disk configured correctly
+    - [ ] User has `auth_type` of `SSO` (photos only sync for SSO users)
+    - [ ] Queue worker is running: `php artisan queue:work`
+    - [ ] Check failed jobs: `php artisan queue:failed`
+  </Accordion>
+
+  <Accordion title="Wrong Data Priority">
+    **Symptom**: Wrong email or name syncing for students
+    
+    **Explanation**: Student-specific fields have priority. Check that `primary_affiliation` is correctly set to `STUDENT`.
+    
+    **Verify**:
+    ```php
+    use App\Domains\User\Enums\AffiliationEnum;
+    
+    // Ensure affiliation is detected correctly
+    $affiliation = AffiliationEnum::tryFrom($directoryData['eduPersonPrimaryAffiliation']);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## API Reference
+
+<CardGroup cols={2}>
+  <Card title="FindOrUpdateUserFromDirectory" icon="magnifying-glass">
+    **Location**: `app/Domains/User/Actions/Directory/FindOrUpdateUserFromDirectory.php`
+    
+    Main entry point for directory lookups.
+  </Card>
+  
+  <Card title="SyncUserFromDirectory" icon="rotate">
+    **Location**: `app/Domains/User/Actions/Directory/SyncUserFromDirectory.php`
+    
+    Handles field mapping and data synchronization.
+  </Card>
+  
+  <Card title="DirectorySearchType" icon="tag">
+    **Location**: `app/Domains/User/Enums/DirectorySearchType.php`
+    
+    Enum for search type detection.
+  </Card>
+  
+  <Card title="DownloadWildcardPhotoJob" icon="image">
+    **Location**: `app/Domains/User/Jobs/DownloadWildcardPhotoJob.php`
+    
+    Job for downloading Wildcard photos.
+  </Card>
+</CardGroup>

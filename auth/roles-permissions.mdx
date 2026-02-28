@@ -1,0 +1,522 @@
+---
+title: "Roles & Permissions System"
+description: "Understanding and managing the role-based access control system"
+---
+
+The starter kit includes a comprehensive role-based access control (RBAC) system built on Spatie's Laravel Permission package. The system supports flexible permission assignment, system-managed roles, and personal vs. system-wide permission scopes.
+
+## Core Concepts
+
+### Permissions
+
+Permissions define granular actions users can perform in the system. All permissions are defined in `PermissionEnum`:
+
+<CodeGroup>
+```php PermissionEnum
+use App\Domains\Auth\Enums\PermissionEnum;
+
+// System Administration
+PermissionEnum::MANAGE_ALL                   // Super-admin permission
+PermissionEnum::ACCESS_ADMINISTRATION_PANEL  // Access admin panel
+PermissionEnum::MANAGE_IMPERSONATION        // Impersonate users
+
+// User Management
+PermissionEnum::VIEW_USERS                  // View all users
+PermissionEnum::CREATE_USERS                // Create new users
+PermissionEnum::EDIT_USERS                  // Edit user profiles
+
+// Role Management
+PermissionEnum::VIEW_ROLES                  // View all roles
+PermissionEnum::EDIT_ROLES                  // Create/edit roles
+PermissionEnum::DELETE_ROLES                // Delete roles
+PermissionEnum::ASSIGN_ROLES                // Assign roles to users
+
+// API Management
+PermissionEnum::MANAGE_API_USERS            // Manage API users/tokens
+
+// Audit & Monitoring
+PermissionEnum::VIEW_AUDIT_LOGS             // View audit logs
+PermissionEnum::VIEW_LOGIN_RECORDS          // View login history
+
+// Support
+PermissionEnum::VIEW_SUPPORT_TICKETS        // View support tickets
+```
+</CodeGroup>
+
+### Roles
+
+Roles are collections of permissions assigned to users. There are four role types:
+
+<CodeGroup>
+```php RoleTypeEnum
+use App\Domains\Auth\Enums\RoleTypeEnum;
+
+RoleTypeEnum::SYSTEM_MANAGED     // Programmatically managed
+RoleTypeEnum::APPLICATION_ADMIN  // Application administrators
+RoleTypeEnum::APPLICATION_ROLE   // Standard user roles
+RoleTypeEnum::API_INTEGRATION    // API consumer roles
+```
+</CodeGroup>
+
+### Permission Scopes
+
+Permissions have scopes that define their breadth of access:
+
+<CodeGroup>
+```php PermissionScopeEnum
+use App\Domains\Auth\Enums\PermissionScopeEnum;
+
+PermissionScopeEnum::SYSTEM_WIDE  // Unrestricted system-wide access
+PermissionScopeEnum::PERSONAL     // Limited to owned resources
+```
+</CodeGroup>
+
+**System-Wide**: Grants access to all resources
+- Example: `VIEW_USERS` allows viewing ALL users
+- Typically for administrators and staff
+
+**Personal**: Limits access to resources owned by the user
+- Example: `view-own-profile` allows viewing only own profile
+- Enables self-service without broad access
+
+## System Roles
+
+Two roles are automatically managed by the system:
+
+### Super Administrator
+
+The `Super Administrator` role is automatically assigned to NetIDs listed in `SUPER_ADMIN_NETIDS`:
+
+```bash .env
+SUPER_ADMIN_NETIDS=abc123,def456
+```
+
+Super administrators receive the `MANAGE_ALL` permission, which:
+
+- Bypasses all authorization checks via `Gate::before()` callback
+- Grants unrestricted access to all features
+- Cannot be removed or edited through the UI
+
+<Warning>
+  **Never check for MANAGE_ALL in policies**: The `Gate::before()` hook automatically grants access. Explicit checks are redundant and misleading.
+</Warning>
+
+### Northwestern User
+
+The `Northwestern User` role is automatically assigned to all SSO-authenticated users. This provides baseline permissions for organizational users.
+
+## Permission Categories
+
+### System-Managed Permissions
+
+Certain permissions are marked as system-managed and require `MANAGE_ALL` to assign:
+
+```php
+public function isSystemManaged(): bool
+{
+    return match ($this) {
+        self::MANAGE_ALL,
+        self::ACCESS_ADMINISTRATION_PANEL,
+        self::MANAGE_IMPERSONATION,
+        self::DELETE_ROLES,
+        self::VIEW_AUDIT_LOGS,
+        self::VIEW_LOGIN_RECORDS,
+        self::VIEW_SUPPORT_TICKETS => true,
+        default => false,
+    };
+}
+```
+
+These permissions are security-sensitive and restricted to super administrators.
+
+### API-Relevant Permissions
+
+Some permissions are flagged as appropriate for API integrations:
+
+```php
+public function isApiRelevant(): bool
+{
+    return match ($this) {
+        self::VIEW_USERS => true,
+        default => false,
+    };
+}
+```
+
+This helps administrators select appropriate permissions when creating API tokens.
+
+## Checking Permissions
+
+### Using Gate Facade
+
+The recommended approach for authorization checks:
+
+<CodeGroup>
+```php Gate Checks
+use Illuminate\Support\Facades\Gate;
+use App\Domains\Auth\Enums\PermissionEnum;
+
+// Check if user has permission
+if (Gate::allows(PermissionEnum::VIEW_USERS)) {
+    // User has permission
+}
+
+// Deny if missing permission
+Gate::authorize(PermissionEnum::EDIT_USERS);
+
+// In policies
+public function viewAny(User $user): bool
+{
+    return $user->can(PermissionEnum::VIEW_USERS);
+}
+```
+</CodeGroup>
+
+### Direct Permission Checks
+
+Direct checks bypass the `Gate::before()` hook (use sparingly):
+
+<CodeGroup>
+```php Direct Checks
+// Bypass Gate::before() - use only in infrastructure code
+if ($user->hasPermissionTo(PermissionEnum::MANAGE_ALL)) {
+    // Direct permission check
+}
+
+// Check for any of multiple permissions
+if ($user->hasAnyPermission([PermissionEnum::VIEW_USERS, PermissionEnum::EDIT_USERS])) {
+    // User has at least one permission
+}
+```
+</CodeGroup>
+
+<Warning>
+  **Avoid in policies**: Direct checks should only be used in infrastructure code where the `Gate::before()` hook would cause recursion (e.g., `Role::canBeManaged()` in app/Domains/Auth/Models/Role.php:65).
+</Warning>
+
+## Role Management
+
+### Creating Roles
+
+Roles can be created through the admin panel or programmatically:
+
+<CodeGroup>
+```php Create Role
+use App\Domains\Auth\Models\Role;
+use App\Domains\Auth\Enums\RoleTypeEnum;
+use App\Domains\Auth\Enums\PermissionEnum;
+
+$role = Role::create([
+    'name' => 'Content Editor',
+    'guard_name' => 'web',
+    'role_type_id' => RoleType::where('slug', RoleTypeEnum::APPLICATION_ROLE)->first()->id,
+]);
+
+// Assign permissions
+$role->givePermissionTo([
+    PermissionEnum::VIEW_USERS,
+    PermissionEnum::EDIT_USERS,
+]);
+```
+</CodeGroup>
+
+### Assigning Roles to Users
+
+<CodeGroup>
+```php Assign Roles
+use App\Domains\User\Models\User;
+
+$user = User::find(1);
+
+// Assign single role
+$user->assignRole('Content Editor');
+
+// Assign multiple roles
+$user->assignRole(['Content Editor', 'Moderator']);
+
+// Sync roles (removes other roles)
+$user->syncRoles(['Content Editor']);
+
+// Remove role
+$user->removeRole('Content Editor');
+```
+</CodeGroup>
+
+### Role Modification Origins
+
+Role changes are audited with their origin:
+
+<CodeGroup>
+```php RoleModificationOriginEnum
+use App\Domains\Auth\Enums\RoleModificationOriginEnum;
+
+RoleModificationOriginEnum::UI_ACTION              // Manual admin action
+RoleModificationOriginEnum::REMOVED_BY_DELETION    // Role deleted
+RoleModificationOriginEnum::NETID_STATUS_CHANGE    // NetID lifecycle event
+RoleModificationOriginEnum::SSO_PROVISIONING       // First-time SSO login
+RoleModificationOriginEnum::SYSTEM                 // Automated/programmatic
+```
+</CodeGroup>
+
+This provides context for role changes in audit logs.
+
+## Implementing Authorization
+
+### In Laravel Policies
+
+Create policies for model authorization:
+
+<CodeGroup>
+```php Policy Example
+use App\Domains\Auth\Enums\PermissionEnum;
+use App\Domains\User\Models\User;
+use App\Models\Post;
+
+class PostPolicy
+{
+    public function viewAny(User $user): bool
+    {
+        return $user->can(PermissionEnum::VIEW_POSTS);
+    }
+    
+    public function view(User $user, Post $post): bool
+    {
+        // System-wide permission
+        if ($user->can(PermissionEnum::VIEW_ANY_POST)) {
+            return true;
+        }
+        
+        // Personal permission with ownership check
+        return $user->can(PermissionEnum::VIEW_OWN_POST) 
+            && $post->user->is($user);
+    }
+    
+    public function create(User $user): bool
+    {
+        return $user->can(PermissionEnum::CREATE_POSTS);
+    }
+    
+    public function update(User $user, Post $post): bool
+    {
+        if ($user->can(PermissionEnum::EDIT_ANY_POST)) {
+            return true;
+        }
+        
+        return $user->can(PermissionEnum::EDIT_OWN_POST)
+            && $post->user->is($user);
+    }
+}
+```
+</CodeGroup>
+
+### In Controllers
+
+<CodeGroup>
+```php Controller Authorization
+use App\Domains\Auth\Enums\PermissionEnum;
+
+class PostController extends Controller
+{
+    public function __construct()
+    {
+        // Authorize via policy
+        $this->authorizeResource(Post::class, 'post');
+    }
+    
+    public function index()
+    {
+        // Manual authorization
+        Gate::authorize(PermissionEnum::VIEW_POSTS);
+        
+        // Or use middleware
+        $this->middleware('can:' . PermissionEnum::VIEW_POSTS->value);
+    }
+}
+```
+</CodeGroup>
+
+### In Blade Templates
+
+<CodeGroup>
+```blade Blade Directives
+@can(App\Domains\Auth\Enums\PermissionEnum::EDIT_USERS)
+    <a href="{{ route('users.edit', $user) }}">Edit User</a>
+@endcan
+
+@cannot(App\Domains\Auth\Enums\PermissionEnum::DELETE_USERS)
+    <p>You don't have permission to delete users.</p>
+@endcannot
+
+@canany([App\Domains\Auth\Enums\PermissionEnum::VIEW_USERS, App\Domains\Auth\Enums\PermissionEnum::EDIT_USERS])
+    <a href="{{ route('users.index') }}">Manage Users</a>
+@endcanany
+```
+</CodeGroup>
+
+## Adding New Permissions
+
+<Steps>
+  <Step title="Add to PermissionEnum">
+    Define the new permission in `app/Domains/Auth/Enums/PermissionEnum.php`:
+    
+    ```php
+    case EDIT_POSTS = 'edit-posts';
+    ```
+  </Step>
+  
+  <Step title="Add Description">
+    Provide a description in the `description()` method:
+    
+    ```php
+    self::EDIT_POSTS => 'Allows editing all posts in the system.',
+    ```
+  </Step>
+  
+  <Step title="Set Scope">
+    Define the permission scope in the `scope()` method:
+    
+    ```php
+    self::EDIT_POSTS => PermissionScopeEnum::SYSTEM_WIDE,
+    ```
+  </Step>
+  
+  <Step title="Mark as System-Managed (Optional)">
+    If security-sensitive, mark as system-managed:
+    
+    ```php
+    public function isSystemManaged(): bool
+    {
+        return match ($this) {
+            self::EDIT_POSTS => true,
+            default => false,
+        };
+    }
+    ```
+  </Step>
+  
+  <Step title="Update Permission Seeder">
+    Add to `app/Domains/Auth/Seeders/PermissionSeeder.php` and run:
+    
+    ```bash
+    php artisan db:seed PermissionSeeder
+    ```
+  </Step>
+  
+  <Step title="Assign to Roles">
+    Update role seeders or assign via admin panel.
+  </Step>
+</Steps>
+
+## The MANAGE_ALL Permission
+
+The `MANAGE_ALL` permission is special and works via a `Gate::before()` callback:
+
+<CodeGroup>
+```php Gate::before() Callback
+// In AppServiceProvider
+Gate::before(function (User $user, string $ability) {
+    if ($user->hasPermissionTo(PermissionEnum::MANAGE_ALL)) {
+        return true; // Grant access to everything
+    }
+});
+```
+</CodeGroup>
+
+This means:
+
+- Super admins automatically pass all `Gate::allows()` checks
+- You never need to explicitly check for `MANAGE_ALL` in policies
+- The check happens before any policy methods run
+
+<Warning>
+  **Use `can()` not `hasPermissionTo()` for super admin features**: To properly leverage the `Gate::before()` hook, always use `$user->can(PermissionEnum::MANAGE_ALL)` to check for super admin access, not `hasPermissionTo()`.
+</Warning>
+
+## Role Management Policy
+
+The `Role` model includes logic to determine who can manage roles:
+
+<CodeGroup>
+```php Role::canBeManaged()
+public function canBeManaged(?User $user = null): bool
+{
+    $user ??= auth()->user();
+    
+    if (!$user instanceof User) {
+        return false;
+    }
+    
+    // System-managed roles require MANAGE_ALL
+    if ($this->isSystemManagedType()) {
+        return $user->hasPermissionTo(PermissionEnum::MANAGE_ALL);
+    }
+    
+    // Other roles require ASSIGN_ROLES
+    return $user->hasPermissionTo(PermissionEnum::ASSIGN_ROLES);
+}
+```
+</CodeGroup>
+
+Note: This uses `hasPermissionTo()` to avoid recursion from `Gate::before()`.
+
+## Soft Deletes
+
+Roles support soft deletes to preserve audit history:
+
+```php
+$role->delete();      // Soft delete
+$role->forceDelete(); // Permanent delete
+$role->restore();     // Restore soft-deleted role
+```
+
+When a role is deleted, it's automatically removed from all users with origin `REMOVED_BY_DELETION`.
+
+## Auditing
+
+All role and permission changes are automatically audited:
+
+- Role creation, updates, and deletion
+- Permission assignments and removals
+- User role assignments and removals
+- Modification origins are tracked
+
+View audit logs in the admin panel with the `VIEW_AUDIT_LOGS` permission.
+
+## Best Practices
+
+1. **Use Gates in policies**: Always use `$user->can()` to leverage `Gate::before()` hook
+2. **Avoid `hasPermissionTo()` in policies**: Reserve for infrastructure code to prevent recursion
+3. **Check ownership for personal permissions**: Always verify resource ownership with personal-scoped permissions
+4. **Name permissions consistently**: Use format `{action}-{resource}` (e.g., `edit-users`)
+5. **Document permission scope**: Always set scope in `PermissionEnum::scope()`
+6. **Seed permissions**: Keep `PermissionSeeder` up to date with all permissions
+
+## Troubleshooting
+
+### Permission Not Working
+
+1. Verify permission exists in database: `php artisan permission:show`
+2. Check user has role with permission: `$user->getAllPermissions()`
+3. Clear permission cache: `php artisan permission:cache-reset`
+4. Verify policy is registered in `AuthServiceProvider`
+
+### Role Cannot Be Edited
+
+System-managed roles cannot be edited through the UI. Check `$role->isSystemManagedType()`.
+
+### Super Admin Not Getting Access
+
+1. Verify NetID is in `SUPER_ADMIN_NETIDS`
+2. Check user has `Super Administrator` role
+3. Verify `Gate::before()` callback is registered in `AppServiceProvider`
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Microsoft Entra ID SSO" icon="shield-check" href="/auth/entra-id-sso">
+    How SSO users get default roles
+  </Card>
+  <Card title="User Impersonation" icon="user-secret" href="/auth/impersonation">
+    Requires MANAGE_IMPERSONATION permission
+  </Card>
+</CardGroup>

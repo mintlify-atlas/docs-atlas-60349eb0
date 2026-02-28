@@ -1,0 +1,494 @@
+---
+title: Environment Configuration
+description: Complete reference for all environment variables in Northwestern Laravel Starter
+---
+
+## Overview
+
+This page provides a comprehensive reference for all environment variables used in Northwestern Laravel Starter. All variables are configured in your `.env` file.
+
+## Core Application
+
+### Application Settings
+
+<ParamField path="APP_NAME" type="string" default="Northwestern Laravel Starter">
+  Application name displayed throughout the interface
+</ParamField>
+
+<ParamField path="APP_ENV" type="string" default="local" required>
+  Application environment: `local`, `staging`, `production`, `testing`, or `ci`
+</ParamField>
+
+<ParamField path="APP_KEY" type="string" required>
+  Encryption key for securing session data and encrypted values. Generate with `php artisan key:generate`
+</ParamField>
+
+<ParamField path="APP_DEBUG" type="boolean" default="true">
+  Enable debug mode. **Must be `false` in production**
+</ParamField>
+
+<ParamField path="APP_URL" type="string" default="http://localhost">
+  The URL where your application is accessible
+</ParamField>
+
+<ParamField path="PRODUCTION_URL" type="string">
+  Canonical production URL used by non-production environments for redirects and links
+</ParamField>
+
+### Localization
+
+<ParamField path="APP_LOCALE" type="string" default="en">
+  Default application locale
+</ParamField>
+
+<ParamField path="APP_FALLBACK_LOCALE" type="string" default="en">
+  Fallback locale when translations are missing
+</ParamField>
+
+<ParamField path="APP_FAKER_LOCALE" type="string" default="en_US">
+  Locale for Faker data generation in seeding
+</ParamField>
+
+<ParamField path="DEFAULT_USER_TIMEZONE" type="string" default="America/Chicago">
+  Default timezone assigned to new users
+</ParamField>
+
+### Maintenance Mode
+
+<ParamField path="APP_MAINTENANCE_DRIVER" type="string" default="file">
+  Maintenance mode storage driver
+</ParamField>
+
+<ParamField path="APP_MAINTENANCE_STORE" type="string" default="database">
+  Maintenance mode data store
+</ParamField>
+
+## Security
+
+<ParamField path="BCRYPT_ROUNDS" type="integer" default="12">
+  Number of bcrypt hashing rounds for passwords. Higher is more secure but slower
+</ParamField>
+
+<ParamField path="SESSION_DRIVER" type="string" default="database">
+  Session storage driver: `file`, `cookie`, `database`, `redis`, etc.
+</ParamField>
+
+<ParamField path="SESSION_LIFETIME" type="integer" default="480">
+  Session lifetime in minutes (default: 8 hours)
+</ParamField>
+
+<ParamField path="SESSION_ENCRYPT" type="boolean" default="true">
+  Encrypt session data
+</ParamField>
+
+<ParamField path="SESSION_SECURE_COOKIE" type="boolean" default="true">
+  Only transmit session cookies over HTTPS
+</ParamField>
+
+<ParamField path="SESSION_PATH" type="string" default="/">
+  Cookie path
+</ParamField>
+
+<ParamField path="SESSION_DOMAIN" type="string">
+  Cookie domain
+</ParamField>
+
+## Logging
+
+<ParamField path="LOG_CHANNEL" type="string" default="stack">
+  Default log channel
+</ParamField>
+
+<ParamField path="LOG_STACK" type="string" default="single">
+  Stack channel configuration
+</ParamField>
+
+<ParamField path="LOG_DEPRECATIONS_CHANNEL" type="string">
+  Channel for deprecation warnings
+</ParamField>
+
+<ParamField path="LOG_LEVEL" type="string" default="debug">
+  Minimum log level: `debug`, `info`, `notice`, `warning`, `error`, `critical`, `alert`, `emergency`
+</ParamField>
+
+## Database
+
+### Primary Database
+
+<ParamField path="DB_CONNECTION" type="string" default="pgsql">
+  Database driver
+</ParamField>
+
+<ParamField path="DB_HOST" type="string" default="127.0.0.1">
+  Database host
+</ParamField>
+
+<ParamField path="DB_PORT" type="integer" default="5432">
+  Database port
+</ParamField>
+
+<ParamField path="DB_DATABASE" type="string" required>
+  Database name
+</ParamField>
+
+<ParamField path="DB_USERNAME" type="string" required>
+  Database username
+</ParamField>
+
+<ParamField path="DB_PASSWORD" type="string" required>
+  Database password
+</ParamField>
+
+### Test Database
+
+<ParamField path="DB_PHPUNIT_DATABASE" type="string">
+  Separate database for PHPUnit tests to avoid destructive operations on main database
+</ParamField>
+
+## Cache & Queue
+
+<ParamField path="BROADCAST_CONNECTION" type="string" default="log">
+  Broadcasting driver
+</ParamField>
+
+<ParamField path="QUEUE_CONNECTION" type="string" default="redis">
+  Queue driver: `sync`, `database`, `redis`, etc.
+</ParamField>
+
+<ParamField path="CACHE_STORE" type="string" default="file">
+  Cache driver: `file`, `redis`, `memcached`, etc.
+</ParamField>
+
+### Redis Configuration
+
+<ParamField path="REDIS_HOST" type="string" default="127.0.0.1">
+  Redis server host
+</ParamField>
+
+<ParamField path="REDIS_PASSWORD" type="string">
+  Redis password (if authentication enabled)
+</ParamField>
+
+<ParamField path="REDIS_PORT" type="integer" default="6379">
+  Redis server port
+</ParamField>
+
+## Mail
+
+<ParamField path="MAIL_MAILER" type="string" default="smtp">
+  Mail driver: `smtp`, `sendmail`, `mailgun`, `ses`, etc.
+</ParamField>
+
+<ParamField path="MAIL_HOST" type="string" default="localhost">
+  SMTP host
+</ParamField>
+
+<ParamField path="MAIL_PORT" type="integer" default="2525">
+  SMTP port
+</ParamField>
+
+<ParamField path="MAIL_USERNAME" type="string">
+  SMTP username
+</ParamField>
+
+<ParamField path="MAIL_PASSWORD" type="string">
+  SMTP password
+</ParamField>
+
+<ParamField path="MAIL_FROM_ADDRESS" type="string" default="no-reply@northwestern.edu">
+  Default sender email address
+</ParamField>
+
+<ParamField path="MAIL_FROM_NAME" type="string">
+  Default sender name
+</ParamField>
+
+<ParamField path="MAIL_CAPTURE_URL" type="string">
+  URL to MailPit or similar mail capture tool. Shown in navigation when set
+</ParamField>
+
+## Object Storage (MinIO/S3)
+
+<ParamField path="AWS_ACCESS_KEY_ID" type="string" required>
+  Access key ID for MinIO or AWS S3
+</ParamField>
+
+<ParamField path="AWS_SECRET_ACCESS_KEY" type="string" required>
+  Secret access key for MinIO or AWS S3
+</ParamField>
+
+<ParamField path="AWS_DEFAULT_REGION" type="string" default="us-east-1">
+  AWS region
+</ParamField>
+
+<ParamField path="AWS_URL" type="string" required>
+  Public URL for accessing stored objects
+</ParamField>
+
+<ParamField path="AWS_ENDPOINT" type="string" required>
+  S3-compatible endpoint URL
+</ParamField>
+
+<ParamField path="AWS_USE_PATH_STYLE_ENDPOINT" type="boolean" default="true">
+  Use path-style URLs (required for MinIO)
+</ParamField>
+
+<ParamField path="AWS_BUCKET" type="string" required>
+  Bucket name for file storage
+</ParamField>
+
+<ParamField path="AWS_MINIO_CONSOLE" type="string">
+  MinIO console URL for local development
+</ParamField>
+
+<ParamField path="S3_STREAM_READS" type="boolean" default="false">
+  Enable streaming for large file reads to reduce memory usage
+</ParamField>
+
+<Warning>
+  When enabling `S3_STREAM_READS`, ensure your HTTP client can connect to the endpoint. cURL may have issues with self-signed certificates.
+</Warning>
+
+## Authentication
+
+### Microsoft Entra ID (Azure AD) SSO
+
+<ParamField path="AZURE_CLIENT_ID" type="string">
+  Azure AD application client ID for SSO
+</ParamField>
+
+<ParamField path="AZURE_CLIENT_SECRET" type="string">
+  Azure AD application client secret
+</ParamField>
+
+### Local Authentication
+
+<ParamField path="LOCAL_AUTH_ENABLED" type="boolean" default="true">
+  Enable email-based authentication with verification codes
+</ParamField>
+
+## API Configuration
+
+<ParamField path="API_ENABLED" type="boolean" default="true">
+  Enable API endpoints
+</ParamField>
+
+<ParamField path="API_REQUEST_LOGGING_ENABLED" type="boolean" default="true">
+  Log API requests for auditing and debugging
+</ParamField>
+
+<ParamField path="API_REQUEST_LOG_RETENTION_DAYS" type="integer" default="90">
+  Number of days to retain API request logs
+</ParamField>
+
+<ParamField path="API_REQUEST_LOGGING_SAMPLING_ENABLED" type="boolean" default="false">
+  Enable sampling to reduce log volume
+</ParamField>
+
+<ParamField path="API_REQUEST_LOGGING_SAMPLE_RATE" type="float" default="1.0">
+  Sampling rate (0.0 to 1.0) when sampling is enabled
+</ParamField>
+
+<ParamField path="API_ACCESS_TOKEN_EXPIRATION_NOTIFICATIONS_ENABLED" type="boolean" default="true">
+  Send notifications when API tokens are about to expire
+</ParamField>
+
+<ParamField path="API_DEMO_USER_ACCESS_TOKEN" type="string">
+  Demo user access token for testing
+</ParamField>
+
+## Rate Limiting
+
+<ParamField path="RATE_LIMIT_API_PER_MINUTE" type="integer" default="1800">
+  API requests per minute per user
+</ParamField>
+
+<ParamField path="RATE_LIMIT_AUTH_LOGIN_CODE_REQUEST_PER_MINUTE" type="integer" default="5">
+  Login code requests per minute (global)
+</ParamField>
+
+<ParamField path="RATE_LIMIT_AUTH_LOGIN_CODE_REQUEST_PER_EMAIL_PER_MINUTE" type="integer" default="3">
+  Login code requests per email per minute
+</ParamField>
+
+<ParamField path="RATE_LIMIT_AUTH_LOGIN_CODE_VERIFY_PER_MINUTE" type="integer" default="10">
+  Login code verification attempts per minute (global)
+</ParamField>
+
+<ParamField path="RATE_LIMIT_AUTH_LOGIN_CODE_VERIFY_PER_CHALLENGE_PER_MINUTE" type="integer" default="5">
+  Login code verification attempts per challenge per minute
+</ParamField>
+
+<ParamField path="RATE_LIMIT_AUTH_IMPERSONATE_PER_MINUTE" type="integer" default="10">
+  Impersonation requests per minute
+</ParamField>
+
+<ParamField path="RATE_LIMIT_SUPPORT_CONTACT_PER_MINUTE" type="integer" default="2">
+  Support form submissions per minute
+</ParamField>
+
+<ParamField path="RATE_LIMIT_SUPPORT_CONTACT_PER_HOUR" type="integer" default="5">
+  Support form submissions per hour
+</ParamField>
+
+## Northwestern Integrations
+
+### Directory Search
+
+<ParamField path="DIRECTORY_SEARCH_API_KEY" type="string">
+  API key for Northwestern Directory Search
+</ParamField>
+
+<ParamField path="WILDCARD_PHOTO_SYNC_ENABLED" type="boolean" default="false">
+  Automatically sync user photos from Northwestern's Wildcard system
+</ParamField>
+
+### EventHub
+
+<ParamField path="EVENT_HUB_MOCK_ENABLED" type="boolean" default="true">
+  Use mock EventHub for local development
+</ParamField>
+
+<ParamField path="EVENT_HUB_BASE_URL" type="string" default="https://northwestern-dev.apigee.net">
+  EventHub API base URL
+</ParamField>
+
+<ParamField path="EVENT_HUB_API_KEY" type="string">
+  EventHub API key
+</ParamField>
+
+<ParamField path="EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET" type="string">
+  Shared secret for HMAC verification of EventHub webhooks
+</ParamField>
+
+## Features
+
+### Changelog
+
+<ParamField path="CHANGELOG_ENABLED" type="boolean" default="false">
+  Enable changelog feature to display recent changes
+</ParamField>
+
+<ParamField path="JIRA_URL" type="string" default="https://nuitadminsystems.atlassian.net">
+  Jira instance URL for changelog integration
+</ParamField>
+
+<ParamField path="JIRA_ISSUE_IDENTIFIER" type="string">
+  Jira project identifier for changelog issues
+</ParamField>
+
+### Contact Support
+
+<ParamField path="SUPPORT_ENABLED" type="boolean" default="false">
+  Enable contact/support form for users
+</ParamField>
+
+<ParamField path="SUPPORT_LIMITED_WARNING" type="boolean">
+  Show limited support warning. Defaults to `true` for non-production environments
+</ParamField>
+
+<ParamField path="SUPPORT_DRIVER" type="string" default="mail">
+  Support ticket driver: `mail` or `team-dynamix`
+</ParamField>
+
+<ParamField path="SUPPORT_MAIL_TO" type="string" default="your-team@northwestern.edu">
+  Email address for support form submissions when using `mail` driver
+</ParamField>
+
+<ParamField path="SUPPORT_REFERENCE_PREFIX" type="string" default="SUP">
+  Prefix for support ticket reference numbers
+</ParamField>
+
+### TeamDynamix Integration
+
+<Note>
+  These variables are only needed when `SUPPORT_DRIVER=team-dynamix`
+</Note>
+
+<ParamField path="TDX_API_BASE_URL" type="string">
+  TeamDynamix API base URL
+</ParamField>
+
+<ParamField path="TDX_USERNAME" type="string">
+  TeamDynamix API username
+</ParamField>
+
+<ParamField path="TDX_PASSWORD" type="string">
+  TeamDynamix API password
+</ParamField>
+
+<ParamField path="TDX_TICKET_APP_NAME" type="string">
+  TeamDynamix application name for tickets
+</ParamField>
+
+<ParamField path="TDX_CLIENT_APP_NAME" type="string">
+  TeamDynamix client application name
+</ParamField>
+
+<ParamField path="TDX_ASSIGNEE_ID" type="string">
+  Default assignee ID for new tickets
+</ParamField>
+
+<ParamField path="TDX_TICKET_TYPE" type="string" default="Default">
+  Default ticket type
+</ParamField>
+
+<ParamField path="TDX_FORM_TYPE" type="string" default="NU Base Service Request">
+  Form type for ticket creation
+</ParamField>
+
+<ParamField path="TDX_TICKET_STATUS" type="string" default="New">
+  Initial status for new tickets
+</ParamField>
+
+<ParamField path="TDX_TICKET_PRIORITY" type="string" default="Low (P4)">
+  Default ticket priority
+</ParamField>
+
+<ParamField path="TDX_SERVICE" type="string">
+  Service identifier for tickets
+</ParamField>
+
+### Environment Lockdown
+
+<ParamField path="ENVIRONMENT_LOCKDOWN_ENABLED" type="boolean">
+  Restrict access to users with non-default roles. Defaults to `true` for staging, `false` for production/local/testing/ci
+</ParamField>
+
+<Note>
+  Environment lockdown helps protect staging and demo environments from unauthorized access while allowing authenticated users in production.
+</Note>
+
+## Monitoring & Observability
+
+See the dedicated [Monitoring](/deployment/monitoring) page for Sentry and Telescope configuration.
+
+## Health Checks
+
+See the dedicated [Health Checks](/deployment/health-checks) page for health check configuration.
+
+## Development Tools
+
+### Pusher (WebSockets)
+
+<ParamField path="PUSHER_APP_ID" type="string">
+  Pusher application ID
+</ParamField>
+
+<ParamField path="PUSHER_APP_KEY" type="string">
+  Pusher application key
+</ParamField>
+
+<ParamField path="PUSHER_APP_SECRET" type="string">
+  Pusher application secret
+</ParamField>
+
+<ParamField path="PUSHER_APP_CLUSTER" type="string" default="us2">
+  Pusher cluster
+</ParamField>
+
+### Testing
+
+<ParamField path="PG_BIN_DIRECTORY" type="string">
+  Path to PostgreSQL bin directory for Cypress tests. Auto-discovered if not set
+</ParamField>

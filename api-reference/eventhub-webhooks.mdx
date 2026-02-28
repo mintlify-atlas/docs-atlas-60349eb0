@@ -1,0 +1,278 @@
+---
+title: 'EventHub Webhooks'
+description: 'Configure and secure webhook endpoints for Northwestern EventHub integration'
+---
+
+## Overview
+
+EventHub webhooks allow your application to receive real-time notifications about Northwestern identity lifecycle events. All webhook endpoints require HMAC signature verification for security.
+
+<Warning>
+All EventHub webhook routes are protected by HMAC verification middleware. Requests without valid signatures will be rejected with a 403 Forbidden response.
+</Warning>
+
+## Configuration
+
+EventHub webhook settings are configured in `config/nusoa.php`:
+
+```php
+'eventHub' => [
+    'mock' => env('EVENT_HUB_MOCK_ENABLED', env('APP_ENV') == 'local'),
+    'baseUrl' => env('EVENT_HUB_BASE_URL'),
+    'apiKey' => env('EVENT_HUB_API_KEY'),
+    'hmacVerificationSharedSecret' => env('EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET'),
+    'hmacVerificationHeader' => env('EVENT_HUB_HMAC_VERIFICATION_HEADER', 'X-HMAC-Signature'),
+    'hmacVerificationAlgorithmForRegistration' => env('EVENT_HUB_HMAC_VERIFICATION_ALGORITHM_TYPE_REGISTRATION', 'HmacSHA256'),
+    'hmacVerificationAlgorithmForPHPHashHmac' => env('EVENT_HUB_HMAC_VERIFICATION_ALGORITHM_TYPE_PHP', 'sha256'),
+],
+```
+
+### Environment Variables
+
+<ParamField path="EVENT_HUB_MOCK_ENABLED" type="boolean" default="true in local">
+  Enable mock EventHub mode for local development
+</ParamField>
+
+<ParamField path="EVENT_HUB_BASE_URL" type="string" required>
+  Base URL for Northwestern's EventHub API
+</ParamField>
+
+<ParamField path="EVENT_HUB_API_KEY" type="string" required>
+  API key for authenticating with EventHub
+</ParamField>
+
+<ParamField path="EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET" type="string" required>
+  Shared secret used to verify HMAC signatures on incoming webhooks
+</ParamField>
+
+<ParamField path="EVENT_HUB_HMAC_VERIFICATION_HEADER" type="string" default="X-HMAC-Signature">
+  HTTP header containing the HMAC signature
+</ParamField>
+
+<ParamField path="EVENT_HUB_HMAC_VERIFICATION_ALGORITHM_TYPE_REGISTRATION" type="string" default="HmacSHA256">
+  Algorithm type for EventHub webhook registration (must match EventHub API docs)
+</ParamField>
+
+<ParamField path="EVENT_HUB_HMAC_VERIFICATION_ALGORITHM_TYPE_PHP" type="string" default="sha256">
+  PHP hash algorithm for HMAC verification (passed to `hash_hmac()`)
+</ParamField>
+
+## HMAC Signature Verification
+
+All EventHub webhooks must include a valid HMAC signature in the request header. The `eventhub_hmac` middleware automatically verifies these signatures.
+
+### Verification Process
+
+1. EventHub sends a webhook request with the message body
+2. EventHub includes an HMAC signature in the `X-HMAC-Signature` header (or configured header)
+3. The middleware computes the expected signature using:
+   - The raw request body
+   - The shared secret from `EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET`
+   - The configured HMAC algorithm (default: SHA256)
+4. The computed signature is compared against the provided signature
+5. Requests with invalid signatures are rejected with HTTP 403
+
+### Example HMAC Generation
+
+```php
+$sharedSecret = config('nusoa.eventHub.hmacVerificationSharedSecret');
+$algorithm = config('nusoa.eventHub.hmacVerificationAlgorithmForPHPHashHmac');
+$message = $request->getContent();
+
+$hmacHash = hash_hmac($algorithm, $message, $sharedSecret, true);
+$encodedHash = base64_encode($hmacHash);
+
+// Include in request header
+$headers = [
+    'X-HMAC-Signature' => $encodedHash
+];
+```
+
+<Note>
+The HMAC signature is computed from the **raw request body** before any parsing or processing.
+</Note>
+
+## NetID Update Webhook
+
+The NetID Update webhook receives notifications when a Northwestern NetID undergoes lifecycle changes such as deactivation, deprovisioning, or security holds.
+
+### Endpoint
+
+```
+POST /api/eventhub/netid-update
+```
+
+<Note>
+This route is commented out by default in `routes/api.php` (lines 48-52). Uncomment it when subscribing to the `etidentity.ldap.netid.term` topic.
+</Note>
+
+### Topic Name
+
+```
+etidentity.ldap.netid.term
+```
+
+### Webhook Payload
+
+The webhook sends URL-encoded form data:
+
+<ParamField path="netid" type="string" required>
+  The Northwestern NetID affected by the update (e.g., "abc123")
+</ParamField>
+
+<ParamField path="action" type="string" required>
+  The lifecycle action being performed. Valid values:
+  - `deactivate` - User account has been deactivated
+  - `deprovision` - User account has been deprovisioned
+  - `sechold` - User account has been placed on security hold
+</ParamField>
+
+### Example Request
+
+```http
+POST /api/eventhub/netid-update HTTP/1.1
+Host: your-app.northwestern.edu
+Content-Type: application/x-www-form-urlencoded
+X-HMAC-Signature: dGVzdHNpZ25hdHVyZWhlcmU=
+
+netid=abc123&action=deactivate
+```
+
+### Response - Accepted
+
+When the webhook successfully processes a known user:
+
+```json
+{
+  "status": "accepted",
+  "netid": "abc123",
+  "action": "deactivate"
+}
+```
+
+**HTTP Status:** `202 Accepted`
+
+### Response - Unknown User
+
+When the NetID is not found in the application:
+
+```json
+{
+  "status": "ignored",
+  "reason": "unknown-user",
+  "netid": "abc123"
+}
+```
+
+**HTTP Status:** `200 OK`
+
+### Response - Invalid Payload
+
+When the payload is malformed or contains invalid data:
+
+```json
+{
+  "status": "ignored",
+  "reason": "invalid-payload",
+  "message": "Webhook payload missing required fields: netid and action"
+}
+```
+
+**HTTP Status:** `200 OK`
+
+<Info>
+Invalid payloads return HTTP 200 to prevent EventHub from retrying malformed requests that would never succeed.
+</Info>
+
+### Processing Logic
+
+1. The webhook receives the URL-encoded payload
+2. HMAC signature is verified by the `eventhub_hmac` middleware
+3. Payload is parsed into `netid` and `action` fields
+4. System checks if the NetID exists in the database (SSO users only)
+5. If user exists, a `NetIdUpdated` event is dispatched
+6. Event listeners handle the appropriate action (see `ProcessNetIdUpdate` listener)
+
+### Available Actions
+
+<ParamField path="deactivate" type="enum">
+  User account has been deactivated in Northwestern's identity system
+</ParamField>
+
+<ParamField path="deprovision" type="enum">
+  User account has been deprovisioned and removed from active directory
+</ParamField>
+
+<ParamField path="sechold" type="enum">
+  User account has been placed on security hold due to policy violations or security concerns
+</ParamField>
+
+## Security Considerations
+
+<Warning>
+**Critical Security Requirements:**
+
+1. **Never disable HMAC verification** in production environments
+2. **Rotate shared secrets regularly** - Update `EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET` and re-register webhooks
+3. **Use HTTPS only** - EventHub webhooks should only be delivered over secure connections
+4. **Validate webhook origin** - Ensure requests come from Northwestern's EventHub infrastructure
+5. **Monitor webhook failures** - Implement alerting for repeated signature verification failures
+</Warning>
+
+### Best Practices
+
+- Store the HMAC shared secret in environment variables, never in source code
+- Use different shared secrets for different environments (dev, staging, production)
+- Implement rate limiting on webhook endpoints to prevent abuse
+- Log all webhook attempts (successful and failed) for audit purposes
+- Return appropriate HTTP status codes to prevent unnecessary retries
+
+## Route Configuration
+
+EventHub webhooks are registered in `routes/api.php`:
+
+```php
+Route::middleware(['eventhub_hmac'])->prefix('eventhub')->group(function () {
+    // Uncomment when subscribing to the netid update topic
+    Route::post('netid-update', App\Domains\User\Http\Controllers\Webhooks\NetIdUpdateController::class)
+        ->eventHubWebhook('etidentity.ldap.netid.term')
+        ->name('netid-update');
+});
+```
+
+The `eventHubWebhook()` macro automatically:
+- Registers the webhook with EventHub during deployment
+- Configures the topic subscription
+- Sets up the HMAC verification parameters
+
+## Testing Webhooks
+
+For testing EventHub webhooks in development, use the `MocksEventHub` trait:
+
+```php
+use App\Domains\Core\Concerns\MocksEventHub;
+
+class NetIdUpdateTest extends TestCase
+{
+    use MocksEventHub;
+
+    public function test_it_handles_deactivation()
+    {
+        $response = $this->send(
+            'etidentity.ldap.netid.term',
+            'netid=abc123&action=deactivate'
+        );
+
+        $response->assertAccepted();
+    }
+}
+```
+
+The `MocksEventHub` trait automatically generates valid HMAC signatures for test requests.
+
+## Related Documentation
+
+- See `NetIdUpdateController.php` for webhook implementation details
+- See `NetIdUpdated` event for payload parsing logic
+- See `ProcessNetIdUpdate` listener for event handling
+- Refer to Northwestern's EventHub API documentation for topic subscriptions and webhook registration

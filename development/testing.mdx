@@ -1,0 +1,604 @@
+---
+title: Testing
+description: Run PHPUnit tests, Cypress E2E tests, and ensure code quality
+---
+
+The Northwestern Laravel Starter includes comprehensive testing tools including PHPUnit for unit and feature tests, and Cypress for end-to-end browser testing.
+
+## PHPUnit Testing
+
+PHPUnit is used for unit and feature tests. The starter uses both PHPUnit and Pest syntax.
+
+### Running Tests
+
+Run all tests:
+
+```bash
+php artisan test
+```
+
+Or use PHPUnit directly:
+
+```bash
+vendor/bin/phpunit
+```
+
+### Test Suites
+
+The application has two test suites:
+
+<Tabs>
+  <Tab title="Unit Tests">
+    Run only unit tests:
+    
+    ```bash
+    php artisan test --testsuite=Unit
+    ```
+    
+    Unit tests are located in `tests/Unit/` and test individual classes in isolation.
+  </Tab>
+  
+  <Tab title="Feature Tests">
+    Run only feature tests:
+    
+    ```bash
+    php artisan test --testsuite=Feature
+    ```
+    
+    Feature tests are located in `tests/Feature/` and test complete features with database interactions.
+  </Tab>
+</Tabs>
+
+### Parallel Testing
+
+Run tests in parallel for faster execution:
+
+```bash
+php artisan test --parallel
+```
+
+Or use Paratest directly:
+
+```bash
+vendor/bin/paratest
+```
+
+<Info>
+The starter includes `brianium/paratest` for parallel test execution.
+</Info>
+
+### Coverage Reports
+
+Generate a code coverage report:
+
+```bash
+php artisan test --coverage
+```
+
+For detailed HTML coverage reports:
+
+```bash
+vendor/bin/phpunit --coverage-html coverage
+```
+
+View the report by opening `coverage/index.html` in your browser.
+
+### Filtering Tests
+
+<CodeGroup>
+```bash Run Specific Test File
+php artisan test tests/Feature/Auth/LoginTest.php
+```
+
+```bash Filter by Name
+php artisan test --filter=login
+```
+
+```bash Run Tests in Directory
+php artisan test tests/Feature/Auth/
+```
+</CodeGroup>
+
+### Test Configuration
+
+PHPUnit configuration is defined in `phpunit.xml`:
+
+```xml phpunit.xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<phpunit
+    bootstrap="vendor/autoload.php"
+    cacheDirectory=".phpunit.cache"
+    colors="true"
+    failOnPhpunitWarning="false"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    
+    <php>
+        <env name="APP_ENV" value="testing" />
+        <env name="DB_CONNECTION" value="phpunit" />
+        <env name="CACHE_STORE" value="array" />
+        <env name="MAIL_MAILER" value="array" />
+        <env name="QUEUE_CONNECTION" value="sync" />
+    </php>
+</phpunit>
+```
+
+### Test Database
+
+Tests use a separate database defined in `.env`:
+
+```env .env
+# This database will be used to run PHPUnit tests against an isolated database
+# in order to avoid destructive operations to the main database.
+DB_PHPUNIT_DATABASE=northwestern_laravel_starter_test
+```
+
+The database connection is automatically switched to `phpunit` during tests, which uses this database.
+
+<Warning>
+Ensure you create the test database before running tests:
+
+```bash
+createdb northwestern_laravel_starter_test
+```
+</Warning>
+
+### Test Environment Variables
+
+These environment variables are automatically set during tests:
+
+| Variable | Value | Purpose |
+|----------|-------|----------|
+| `APP_ENV` | `testing` | Identifies test environment |
+| `DB_CONNECTION` | `phpunit` | Uses isolated test database |
+| `BCRYPT_ROUNDS` | `4` | Faster password hashing |
+| `CACHE_STORE` | `array` | In-memory cache |
+| `MAIL_MAILER` | `array` | Captures mail in memory |
+| `QUEUE_CONNECTION` | `sync` | Executes jobs synchronously |
+| `SESSION_DRIVER` | `array` | In-memory sessions |
+| `TELESCOPE_ENABLED` | `false` | Disables Telescope |
+| `PULSE_ENABLED` | `false` | Disables Pulse |
+
+### Writing Tests
+
+The starter provides base test classes:
+
+<Tabs>
+  <Tab title="Feature Test">
+    ```php tests/Feature/ExampleTest.php
+    <?php
+    
+    namespace Tests\Feature;
+    
+    use Tests\TestCase;
+    
+    class ExampleTest extends TestCase
+    {
+        public function test_homepage_loads(): void
+        {
+            $response = $this->get('/');
+            
+            $response->assertStatus(200);
+        }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="API Test">
+    ```php tests/Feature/Api/ExampleTest.php
+    <?php
+    
+    namespace Tests\Feature\Api;
+    
+    use Tests\ApiTestCase;
+    
+    class ExampleTest extends ApiTestCase
+    {
+        public function test_api_endpoint(): void
+        {
+            $response = $this->getJson('/api/v1/users');
+            
+            $response->assertStatus(200)
+                ->assertJsonStructure(['data']);
+        }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Unit Test (Pest)">
+    ```php tests/Unit/ExampleTest.php
+    <?php
+    
+    use App\Services\ExampleService;
+    
+    it('can process data', function () {
+        $service = new ExampleService();
+        $result = $service->process(['foo' => 'bar']);
+        
+        expect($result)->toBeArray()
+            ->and($result['foo'])->toBe('bar');
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Cypress E2E Testing
+
+Cypress is used for end-to-end browser testing.
+
+### Running Cypress Tests
+
+<Tabs>
+  <Tab title="Interactive Mode">
+    Open Cypress Test Runner:
+    
+    ```bash
+    pnpm run test:e2e
+    ```
+    
+    This opens the Cypress UI where you can run tests interactively.
+  </Tab>
+  
+  <Tab title="Headless Mode">
+    Run tests headlessly (useful for CI):
+    
+    ```bash
+    pnpm run test:e2e:headless
+    ```
+  </Tab>
+  
+  <Tab title="Skip Database Rebuild">
+    Skip database rebuild before tests:
+    
+    ```bash
+    pnpm run test:e2e:skip-rebuild
+    ```
+    
+    Useful when running tests multiple times with the same data.
+  </Tab>
+</Tabs>
+
+### Cypress Configuration
+
+Cypress configuration is defined in `cypress.config.js`:
+
+```javascript cypress.config.js
+import { defineConfig } from "cypress";
+
+export default defineConfig({
+    defaultCommandTimeout: 5000,
+    chromeWebSecurity: false,
+    retries: {
+        runMode: 2,
+    },
+    video: false,
+    viewportWidth: 1920,
+    viewportHeight: 1080,
+    e2e: {
+        baseUrl: getBaseUrlFromEnv() || "http://localhost:8000",
+        supportFile: "cypress/support/index.js",
+    },
+});
+```
+
+### Test Files
+
+Cypress tests are located in `cypress/e2e/`:
+
+```
+cypress/e2e/
+├── auth/
+│   ├── login.cy.ts
+│   ├── logout.cy.ts
+│   └── sso.cy.ts
+└── home.cy.ts
+```
+
+### Writing Cypress Tests
+
+```typescript cypress/e2e/example.cy.ts
+describe('Homepage', () => {
+    beforeEach(() => {
+        cy.visit('/');
+    });
+    
+    it('displays the welcome message', () => {
+        cy.contains('h1', 'Northwestern Laravel Starter');
+    });
+    
+    it('can navigate to login', () => {
+        cy.contains('a', 'Login').click();
+        cy.url().should('include', '/login');
+    });
+});
+```
+
+### Database Management in Cypress
+
+Cypress includes custom commands for database management:
+
+```typescript
+cy.refreshDatabase(); // Rebuild database
+cy.create('User', { name: 'John' }); // Create records
+cy.seed('DemoSeeder'); // Run seeder
+```
+
+### Accessibility Testing
+
+The starter includes `cypress-axe` for accessibility testing:
+
+```typescript
+it('has no accessibility violations', () => {
+    cy.visit('/');
+    cy.injectAxe();
+    cy.checkA11y();
+});
+```
+
+## Code Quality Tools
+
+The starter includes several tools for maintaining code quality.
+
+### PHP Code Formatting (Pint)
+
+Format PHP code using Laravel Pint:
+
+```bash
+composer format:php
+```
+
+Or:
+
+```bash
+vendor/bin/pint
+```
+
+### Static Analysis (PHPStan)
+
+Analyze PHP code for potential issues:
+
+```bash
+composer analyse:php
+```
+
+Or:
+
+```bash
+vendor/bin/phpstan analyse --memory-limit=2G
+```
+
+<Info>
+The starter uses Larastan, a PHPStan wrapper optimized for Laravel.
+</Info>
+
+### Rector (Automated Refactoring)
+
+Run Rector to automatically refactor code:
+
+```bash
+composer rector
+```
+
+Dry run (preview changes without applying):
+
+```bash
+composer rector:dry
+```
+
+### Frontend Formatting (Prettier)
+
+Format frontend code using Prettier:
+
+```bash
+composer format:frontend
+```
+
+Or:
+
+```bash
+pnpm run format
+```
+
+This formats:
+- TypeScript/JavaScript files
+- CSS/SCSS files
+- Blade templates
+- JSON, YAML, XML files
+- Markdown files
+
+### All-in-One Quality Check
+
+Run all code quality tools at once:
+
+```bash
+composer all
+```
+
+This runs:
+1. IDE helper generation
+2. Rector refactoring
+3. PHP formatting
+4. Frontend formatting
+5. PHPStan analysis
+
+## Continuous Integration
+
+The starter is designed to work seamlessly with CI/CD pipelines.
+
+### GitHub Actions Example
+
+```yaml .github/workflows/tests.yml
+name: Tests
+
+on: [push, pull_request]
+
+jobs:
+  phpunit:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_PASSWORD: password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.4
+          extensions: pgsql, pdo_pgsql
+      
+      - name: Install Dependencies
+        run: composer install --prefer-dist --no-progress
+      
+      - name: Run Tests
+        run: php artisan test --coverage
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: localhost
+          DB_DATABASE: test_db
+          DB_USERNAME: postgres
+          DB_PASSWORD: password
+  
+  cypress:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 25
+      
+      - name: Install Dependencies
+        run: pnpm install
+      
+      - name: Run Cypress Tests
+        run: pnpm run test:e2e:headless
+```
+
+### Test Artifacts
+
+Cypress generates a CTRF (Common Test Report Format) JSON report in `.build/ctrf-report.json` when running in CI environments.
+
+## Debugging Tests
+
+<AccordionGroup>
+  <Accordion title="Enable Ray Debugging">
+    The starter includes `spatie/laravel-ray` for debugging. Use it in tests:
+    
+    ```php
+    ray($variable);
+    ray()->showQueries();
+    ```
+  </Accordion>
+  
+  <Accordion title="View SQL Queries">
+    Enable query logging in tests:
+    
+    ```php
+    DB::enableQueryLog();
+    // ... run code
+    ray(DB::getQueryLog());
+    ```
+  </Accordion>
+  
+  <Accordion title="Dump and Die">
+    Use Laravel's `dd()` helper in tests:
+    
+    ```php
+    $response->dd(); // Dump response
+    dd($user); // Dump variable
+    ```
+  </Accordion>
+  
+  <Accordion title="Cypress Debug Mode">
+    Use Cypress debug commands:
+    
+    ```typescript
+    cy.debug(); // Pause and open debugger
+    cy.pause(); // Pause test execution
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Test Database Isolation" icon="database">
+    Always use the dedicated test database to avoid affecting development data.
+  </Card>
+  
+  <Card title="Write Feature Tests" icon="flask">
+    Focus on feature tests that cover complete user workflows.
+  </Card>
+  
+  <Card title="Use Factories" icon="industry">
+    Use model factories for generating test data consistently.
+  </Card>
+  
+  <Card title="Test Edge Cases" icon="triangle-exclamation">
+    Don't just test the happy path—test validation, errors, and edge cases.
+  </Card>
+  
+  <Card title="Keep Tests Fast" icon="bolt">
+    Use `RefreshDatabase` trait and avoid unnecessary database operations.
+  </Card>
+  
+  <Card title="Run Tests Frequently" icon="rotate">
+    Run tests frequently during development to catch issues early.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Tests fail with database connection errors">
+    Ensure the test database exists:
+    
+    ```bash
+    createdb northwestern_laravel_starter_test
+    ```
+    
+    And verify your `.env` configuration.
+  </Accordion>
+  
+  <Accordion title="Cypress can't find PostgreSQL binaries">
+    Configure `PG_BIN_DIRECTORY` in your `.env` file. See the [local setup guide](/development/local-setup#postgresql-binary-path-for-cypress).
+  </Accordion>
+  
+  <Accordion title="Parallel tests fail intermittently">
+    Parallel tests may have race conditions. Try:
+    
+    1. Reducing parallelism: `--parallel --processes=4`
+    2. Using database transactions instead of `RefreshDatabase`
+    3. Running problematic tests in sequence
+  </Accordion>
+  
+  <Accordion title="Coverage reports show 0% coverage">
+    Ensure Xdebug is installed and enabled:
+    
+    ```bash
+    php -v # Should show "with Xdebug"
+    ```
+    
+    Or use PCOV as an alternative.
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,133 @@
+---
+title: Introduction
+description: A robust, enterprise-focused Laravel starter kit tailored for Northwestern University projects
+---
+
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.svg"
+  alt="Northwestern Laravel Starter"
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.svg"
+  alt="Northwestern Laravel Starter"
+/>
+
+## Welcome to Northwestern Laravel Starter
+
+A production-ready Laravel starter kit that provides everything you need to build secure, scalable, and maintainable web applications or fully API-driven services at Northwestern University.
+
+Modern web development involves far more than building routes, controllers, and views. Before any business logic can take shape, teams must establish authentication flows, authorization layers, API conventions, auditing, CI/CD pipelines, frontend patterns, monitoring, and a maintainable project structure. These foundational concerns are essential, yet they consume significant time and often lead to duplicated effort across projects.
+
+The Northwestern Laravel Starter provides a cohesive solution that takes care of this baseline work up front. It offers a production-ready architecture so development can begin with real features instead of infrastructure setup.
+
+<Note>
+  This starter kit is designed primarily for applications built within Northwestern University's ecosystem. If you're outside Northwestern, you may not be able to use the project as-is. However, the architecture, patterns, and modules implemented here may still be valuable as reference material or inspiration.
+</Note>
+
+## Technology Stack
+
+<CardGroup cols={2}>
+  <Card title="PHP 8.4" icon="php">
+    Latest PHP version with modern syntax and performance improvements
+  </Card>
+  <Card title="Laravel 12.x" icon="laravel">
+    The latest Laravel framework with all modern features
+  </Card>
+  <Card title="Filament 5.0" icon="window">
+    Modern admin panel for managing application data
+  </Card>
+  <Card title="PostgreSQL" icon="database">
+    Robust relational database for enterprise applications
+  </Card>
+</CardGroup>
+
+## Get Started
+
+<CardGroup cols={2}>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Install Northwestern Laravel Starter with Composer and get your environment set up
+  </Card>
+  <Card
+    title="Quick Start"
+    icon="rocket"
+    href="/quick-start"
+  >
+    Get a working application up and running in minutes
+  </Card>
+  <Card
+    title="Project Structure"
+    icon="folder-tree"
+    href="/project-structure"
+  >
+    Understand the domain-driven architecture and organization
+  </Card>
+  <Card
+    title="Configuration"
+    icon="gear"
+    href="/configuration"
+  >
+    Configure authentication, APIs, Northwestern integrations, and more
+  </Card>
+</CardGroup>
+
+## Key Features
+
+### Architectural Foundation
+
+- **Domain-Driven Design**: Code is logically grouped by business concerns (Auth, User, Support, Core) for enhanced modularity and maintainability
+- **Action-Based Business Logic**: Single-responsibility action classes encapsulate discrete operations for reusability and testability
+- **Flexible Configuration**: Fine-grained settings for authentication methods, API features, Northwestern integrations, and application behavior
+
+### Authentication & Authorization
+
+- **Multi-Authentication Methods**: Support for Entra ID SSO, Access Tokens, and passwordless email-based verification codes
+- **Role-Based Access Control**: Fine-grained role and permissions system managed through an intuitive Filament interface
+- **User Impersonation**: Secure ability to troubleshoot user-specific issues and simulate user experiences
+
+### API Features
+
+- **Advanced Access Token Management**: Cryptographically secure tokens with CIDR-based IP restrictions, rotation, time-bound validity, and automatic expiration notifications
+- **API Request Logging & Analytics**: Comprehensive request tracking with performance metrics, failure analysis, and probabilistic sampling
+- **Request Tracing**: Automatic trace ID propagation for correlation across logs, audits, and error reports
+- **Standardized Error Responses**: RFC 9457 compliant machine-readable error response formats
+
+### Auditing & Compliance
+
+- **Full Audit Trail**: Automatically logs all model changes and user actions with a complete before/after history
+- **Secure Data Handling**: Sensitive information is properly hashed or encrypted to limit the risk of data exposure
+
+### Northwestern Integrations
+
+- **Northwestern Directory**: Just-in-time user provisioning, automatic data synchronization, and monitoring with the Northwestern Directory service
+- **EventHub**: Seamless integration for publishing events or registering webhooks with the EventHub system
+
+### Frontend & UX
+
+- **Modular Filament UI**: Ready-to-use administration panel with pre-built tables, forms, and dashboards
+- **Brand Compliance**: Pre-built components, layouts, and styling that adhere to the University's branding guidelines
+- **Responsive Design**: Consistent user experience across devices with various screen sizes
+- **WCAG 2.1 Accessibility**: Built with accessibility best practices to ensure inclusivity for all users
+
+### Developer Experience
+
+- **Streamlined Local Development**: Schema-validated database snapshots, configuration validation, and database rebuild utilities
+- **High-Performance Testing**: Parallelized PHPUnit execution with Paratest and end-to-end testing with Cypress
+- **CI/CD Ready**: Pre-configured GitHub Actions workflows for static analysis, formatting, and automated testing
+
+### Monitoring & Operations
+
+- **Health Checks & Monitoring**: Built-in health checks to monitor critical system components
+- **Analytics Dashboards**: Pre-built dashboards for API request metrics and login activity
+- **Laravel Telescope**: Integrated debugging assistant for development environments
+
+## Support
+
+For questions, issues, or contributions, please visit the [GitHub repository](https://github.com/NIT-Administrative-Systems/northwestern-laravel-starter).
+
+This starter kit is built and maintained by [Northwestern University IT](https://www.it.northwestern.edu).

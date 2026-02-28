@@ -1,0 +1,392 @@
+---
+title: Database Management
+description: Manage database snapshots, rebuilds, and schema validation
+---
+
+The Northwestern Laravel Starter provides powerful database management tools for local development, including database snapshots with schema validation and quick rebuild commands.
+
+## Database Rebuild
+
+The `db:rebuild` command provides a quick way to reset your database to a clean state.
+
+### Basic Usage
+
+```bash
+php artisan db:rebuild
+```
+
+This command performs the following steps:
+
+<Steps>
+  <Step title="Clearing cache">
+    Clears the application cache (ignores errors if cache table doesn't exist)
+  </Step>
+  
+  <Step title="Clearing queue">
+    Clears all pending jobs from the queue
+  </Step>
+  
+  <Step title="Clearing schedule cache">
+    Clears the schedule cache
+  </Step>
+  
+  <Step title="Running migrations">
+    Runs `migrate:fresh` to drop all tables and re-run all migrations
+  </Step>
+  
+  <Step title="Seeding database">
+    Seeds the database with production data using `DatabaseSeeder`
+  </Step>
+  
+  <Step title="Seeding demo data">
+    Seeds demo/test data using `DemoSeeder` for development
+  </Step>
+  
+  <Step title="Generating IDE helpers">
+    Regenerates IDE helper files for better code completion
+  </Step>
+</Steps>
+
+<Warning>
+This command cannot be run in production. It will drop all tables and data.
+</Warning>
+
+### Post-Rebuild Information
+
+After a successful rebuild, the command displays helpful information:
+
+```bash
+✓ Database rebuild complete
+
+⚠  There are 5 jobs pending in the queue.
+   → Run php artisan queue:work to process them
+
+⚠  The demo API user's access token is missing.
+   → A random value has been generated for api-nuit
+   → For predictable local testing, add to your .env file:
+
+     API_DEMO_USER_ACCESS_TOKEN=your-value-here
+```
+
+## Database Snapshots
+
+Database snapshots allow you to capture the current state of your database and restore it later. This is particularly useful for:
+
+- Creating reproducible test environments
+- Quickly switching between different data states
+- Sharing database states with team members
+- Creating backups before risky operations
+
+<Info>
+Snapshots use `spatie/laravel-db-snapshots` with added schema validation to ensure compatibility.
+</Info>
+
+### Creating a Snapshot
+
+Create a snapshot of your current database:
+
+```bash
+php artisan db:snapshot:create
+```
+
+Or specify a custom name:
+
+```bash
+php artisan db:snapshot:create my-feature-snapshot
+```
+
+The command performs the following:
+
+<Steps>
+  <Step title="Collecting schema information">
+    Gathers information about migrations and seeders
+  </Step>
+  
+  <Step title="Calculating schema checksum">
+    Generates a checksum from migration and seeder files
+  </Step>
+  
+  <Step title="Creating snapshot directory">
+    Ensures the snapshot directory exists
+  </Step>
+  
+  <Step title="Creating database dump">
+    Uses `pg_dump` to create a SQL dump of the database
+  </Step>
+  
+  <Step title="Saving schema metadata">
+    Stores schema metadata alongside the snapshot for validation
+  </Step>
+</Steps>
+
+#### Skip Schema Validation
+
+If you want to create a snapshot without schema validation:
+
+```bash
+php artisan db:snapshot:create --skip-schema-validation
+```
+
+### Listing Snapshots
+
+View all available snapshots:
+
+```bash
+php artisan db:snapshot:list
+```
+
+This displays a table with:
+- Snapshot name
+- Creation date
+- File size
+- Schema checksum
+- Migration/seeder counts
+
+You can also interactively restore a snapshot from this list.
+
+### Restoring a Snapshot
+
+Restore a previously created snapshot:
+
+```bash
+php artisan db:snapshot:restore my-feature-snapshot
+```
+
+The command will:
+
+<Steps>
+  <Step title="Validate snapshot exists">
+    Checks that the snapshot file exists
+  </Step>
+  
+  <Step title="Validate schema compatibility">
+    Compares the snapshot's schema checksum with the current codebase
+  </Step>
+  
+  <Step title="Confirm operation">
+    Prompts for confirmation (destructive operation)
+  </Step>
+  
+  <Step title="Drop all tables">
+    Drops all tables in the database
+  </Step>
+  
+  <Step title="Load snapshot">
+    Restores the database from the snapshot using `psql`
+  </Step>
+  
+  <Step title="Clear permission cache">
+    Clears the Spatie permission cache
+  </Step>
+</Steps>
+
+#### Schema Mismatch Handling
+
+If the schema has changed since the snapshot was created, you'll see a warning:
+
+```bash
+⚠ SCHEMA MISMATCH DETECTED
+  • Snapshot checksum: abc123def456
+  • Current schema checksum: xyz789ghi012
+  • Created at: Jan 15th 2026 2:30 PM
+  • Current schema files: 42 migrations and 8 seeders
+  • Snapshot schema files: 40 migrations and 7 seeders
+
+? The database schema or seeders have been modified since this snapshot
+  was created. This could result in unexpected behavior. Continue anyway? (yes/no)
+```
+
+You can skip schema validation entirely:
+
+```bash
+php artisan db:snapshot:restore my-feature-snapshot --skip-schema-validation
+```
+
+#### Force Restore (Skip Confirmation)
+
+Skip the confirmation prompt:
+
+```bash
+php artisan db:snapshot:restore my-feature-snapshot --force
+```
+
+#### Create Backup Before Restore
+
+Create a backup of your current database before restoring:
+
+```bash
+php artisan db:snapshot:restore my-feature-snapshot --backup
+```
+
+This creates a snapshot named `my-feature-snapshot-pre-restore-YYYY-MM-DD-HHmmss`.
+
+### Snapshot Information
+
+View detailed information about a specific snapshot:
+
+```bash
+php artisan db:snapshot:info my-feature-snapshot
+```
+
+### Deleting a Snapshot
+
+Remove a snapshot:
+
+```bash
+php artisan db:snapshot:delete my-feature-snapshot
+```
+
+## PostgreSQL Requirements
+
+Database snapshot commands require PostgreSQL command-line utilities:
+
+- **`pg_dump`** - for creating snapshots
+- **`psql`** - for restoring snapshots
+
+These utilities must be available in your `$PATH` or configured via the `PG_BIN_DIRECTORY` environment variable.
+
+### Laravel Herd Users
+
+If you're using Laravel Herd, set the PostgreSQL binary directory:
+
+<Tabs>
+  <Tab title="Windows">
+    ```env .env
+    PG_BIN_DIRECTORY="C:\\Users\\<your-username>\\.config\\herd\\bin\\services\\postgresql\\16\\bin"
+    ```
+  </Tab>
+  
+  <Tab title="macOS">
+    ```env .env
+    PG_BIN_DIRECTORY=/Users/Shared/Herd/services/postgresql/16/bin/
+    ```
+  </Tab>
+</Tabs>
+
+## Seeder Management
+
+The starter uses idempotent seeders with automatic dependency resolution.
+
+### Listing Seeders
+
+View all discoverable seeders with their dependencies:
+
+```bash
+php artisan db:seed:list
+```
+
+Output:
+
+```
+┌───┬──────────────────────────────┬──────────────────────────┐
+│ # │ Seeder                       │ Dependencies             │
+├───┼──────────────────────────────┼──────────────────────────┤
+│ 1 │ RolesAndPermissionsSeeder    │ none                     │
+│ 2 │ UsersSeeder                  │ RolesAndPermissionsSeeder│
+│ 3 │ ApiAccessTokensSeeder        │ UsersSeeder              │
+└───┴──────────────────────────────┴──────────────────────────┘
+```
+
+### Show Dependency Tree
+
+View the full dependency tree:
+
+```bash
+php artisan db:seed:list --show-dependencies
+```
+
+### Export as JSON
+
+Export seeder information as JSON:
+
+```bash
+php artisan db:seed:list --json
+```
+
+### Generate Mermaid Diagram
+
+Generate a Mermaid diagram for visualization:
+
+```bash
+php artisan db:seed:list --mermaid
+```
+
+Copy the output and paste it into [mermaid.live](https://mermaid.live) to visualize your seeder dependencies.
+
+## Wake Database Command
+
+If you're using a serverless RDS database (e.g., Aurora Serverless), the database may go to sleep after periods of inactivity. The `db:wake` command attempts to establish a connection to wake it up:
+
+```bash
+php artisan db:wake
+```
+
+### Configuration Options
+
+<ParamField path="--max-attempts" type="integer" default="5">
+  Maximum number of connection attempts (1-20)
+</ParamField>
+
+<ParamField path="--delay" type="integer" default="5">
+  Seconds to wait between attempts (1-30)
+</ParamField>
+
+### Example Usage
+
+```bash
+php artisan db:wake --max-attempts=10 --delay=10
+```
+
+<Tip>
+This command is useful to run as a deployment hook to avoid first-request timeouts.
+</Tip>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Snapshot creation fails with 'pg_dump not found'">
+    Ensure PostgreSQL command-line utilities are installed and in your `$PATH`, or configure `PG_BIN_DIRECTORY` in your `.env` file.
+    
+    For Laravel Herd users, see the [PostgreSQL Requirements](#postgresql-requirements) section.
+  </Accordion>
+  
+  <Accordion title="Schema mismatch when restoring snapshot">
+    This means migrations or seeders have changed since the snapshot was created. You can:
+    
+    1. Create a new snapshot with the current schema
+    2. Use `--skip-schema-validation` to restore anyway
+    3. Run migrations after restoring to bring the schema up to date
+  </Accordion>
+  
+  <Accordion title="Database rebuild fails on 'Clearing cache' step">
+    This is usually safe to ignore. The cache table may not exist yet on a fresh database. The command handles this gracefully and continues.
+  </Accordion>
+  
+  <Accordion title="Permission cache issues after restore">
+    The restore command automatically clears the Spatie permission cache. If you still have issues, manually clear it:
+    
+    ```bash
+    php artisan permission:cache-reset
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Snapshot Before Risky Operations" icon="shield-halved">
+    Create a snapshot before running risky database operations or migrations.
+  </Card>
+  
+  <Card title="Use Descriptive Names" icon="tag">
+    Use descriptive snapshot names like `before-user-migration` or `feature-xyz-ready`.
+  </Card>
+  
+  <Card title="Share Snapshots with Team" icon="users">
+    Commit snapshots to version control (if small) or share them via cloud storage.
+  </Card>
+  
+  <Card title="Regular Database Rebuilds" icon="rotate">
+    Regularly rebuild your database to catch seeder and migration issues early.
+  </Card>
+</CardGroup>

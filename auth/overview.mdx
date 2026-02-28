@@ -1,0 +1,174 @@
+---
+title: "Authentication Overview"
+description: "Understanding the authentication system in the starter kit"
+---
+
+The starter kit provides a flexible authentication system supporting multiple authentication methods for different user types. The system is built on Laravel's authentication foundations with custom extensions for SSO and passwordless authentication.
+
+## Authentication Types
+
+The system supports three authentication types defined in `AuthTypeEnum`:
+
+<CodeGroup>
+```php AuthTypeEnum
+use App\Domains\Auth\Enums\AuthTypeEnum;
+
+AuthTypeEnum::SSO     // Microsoft Entra ID (Azure AD) SSO
+AuthTypeEnum::LOCAL   // Email verification code authentication
+AuthTypeEnum::API     // API token authentication
+```
+</CodeGroup>
+
+Each user account is assigned one authentication type that determines how they authenticate:
+
+- **SSO**: Northwestern users authenticate via Microsoft Entra ID using NetID credentials
+- **LOCAL**: External collaborators authenticate using email verification codes
+- **API**: System integrations authenticate using access tokens
+
+## Authentication Flow
+
+Users begin at the login selection page (`/auth/type`) where they choose their authentication method:
+
+<Steps>
+  <Step title="Select Authentication Method">
+    Users choose between NetID (SSO) or Verification Code (LOCAL) authentication.
+  </Step>
+  
+  <Step title="Authenticate">
+    The user completes authentication using their selected method:
+    - **SSO**: Redirects to Microsoft Entra ID OAuth flow
+    - **LOCAL**: Requests and verifies an email code
+    - **API**: Uses bearer token in request headers
+  </Step>
+  
+  <Step title="User Provisioning">
+    For SSO users, the system automatically creates or updates the user record from directory data via `FindOrUpdateUserFromDirectory`.
+    
+    For LOCAL users, administrators must pre-create accounts in the admin panel.
+  </Step>
+  
+  <Step title="Role Assignment">
+    The system automatically assigns default roles based on authentication type and user attributes (see [Roles & Permissions](/auth/roles-permissions)).
+  </Step>
+  
+  <Step title="Login Recording">
+    All successful authentications are recorded via `RecordLogin` action for audit purposes.
+  </Step>
+</Steps>
+
+## Core Authentication Components
+
+### Controllers
+
+Authentication is handled by specialized controllers in `app/Domains/Auth/Http/Controllers/`:
+
+- **WebSSOController** - Microsoft Entra ID OAuth authentication (app/Domains/Auth/Http/Controllers/WebSSOController.php:24)
+- **SendLoginCodeController** - Email verification code issuance (app/Domains/Auth/Http/Controllers/Local/SendLoginCodeController.php:34)
+- **VerifyLoginCodeController** - Email verification code validation (app/Domains/Auth/Http/Controllers/Local/VerifyLoginCodeController.php:23)
+- **ImpersonationController** - User impersonation for support (app/Domains/Auth/Http/Controllers/ImpersonationController.php:15)
+
+### Actions
+
+Authentication logic is encapsulated in single-purpose action classes:
+
+- **IssueLoginChallenge** - Creates verification code challenges (app/Domains/Auth/Actions/Local/IssueLoginChallenge.php:29)
+- **VerifyLoginChallengeCode** - Validates verification codes (app/Domains/Auth/Actions/Local/VerifyLoginChallengeCode.php:19)
+- **StartImpersonation** - Begins impersonation session (app/Domains/Auth/Actions/Impersonation/StartImpersonation.php:12)
+- **StopImpersonation** - Ends impersonation session (app/Domains/Auth/Actions/Impersonation/StopImpersonation.php:12)
+
+### Models
+
+- **LoginChallenge** - Stores one-time verification code state (app/Domains/Auth/Models/LoginChallenge.php:27)
+- **AccessToken** - Manages API authentication tokens (app/Domains/Auth/Models/AccessToken.php:23)
+- **Role** - Permission role definitions (app/Domains/Auth/Models/Role.php:20)
+- **Permission** - Granular permission definitions (app/Domains/Auth/Models/Permission.php:21)
+
+## Configuration Files
+
+### config/auth.php
+
+Laravel's standard authentication configuration. Defines the user provider:
+
+```php
+'providers' => [
+    'users' => [
+        'driver' => 'eager-load-eloquent',
+        'model' => App\Domains\User\Models\User::class,
+    ],
+],
+```
+
+### config/local-auth.php
+
+Configuration for email verification code authentication:
+
+```php
+return [
+    // Enable/disable local authentication
+    'enabled' => env('LOCAL_AUTH_ENABLED', true),
+    
+    // Rate limiting
+    'rate_limit_per_hour' => env('LOCAL_AUTH_RATE_LIMIT_PER_HOUR', 10),
+    
+    // Verification code settings
+    'code' => [
+        'digits' => 6,
+        'expires_in_minutes' => 10,
+        'max_attempts' => 8,
+        'lock_minutes' => 15,
+    ],
+];
+```
+
+## Security Features
+
+### Rate Limiting
+
+All authentication endpoints are protected by rate limiting:
+
+- **Login code requests**: 10 attempts per hour per email
+- **Code verification**: Limited via `throttle:auth:login-code:verify` middleware
+- **Impersonation**: Limited via `throttle:auth:impersonate` middleware
+
+### Timing Attack Protection
+
+The `SendLoginCodeController` implements timing equalization to prevent user enumeration:
+
+```php
+private const int MIN_TOTAL_RESPONSE_TIME_MS = 500;
+
+$this->timebox->call(function (Timebox $timebox) use ($email) {
+    $timebox->dontReturnEarly();
+    // ... authentication logic
+}, $minimumTimeMs * 1000);
+```
+
+### Lockout Protection
+
+After 8 failed verification attempts, login challenges are locked for 15 minutes (app/Domains/Auth/Models/LoginChallenge.php:73).
+
+## Session Management
+
+Successful authentication triggers session regeneration for security:
+
+```php
+Session::regenerate();
+Session::regenerateToken();
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Microsoft Entra ID SSO" icon="shield-check" href="/auth/entra-id-sso">
+    Configure and customize SSO authentication
+  </Card>
+  <Card title="Email Verification" icon="key" href="/auth/email-verification">
+    Learn about passwordless authentication
+  </Card>
+  <Card title="Roles & Permissions" icon="user-shield" href="/auth/roles-permissions">
+    Understanding the authorization system
+  </Card>
+  <Card title="User Impersonation" icon="user-secret" href="/auth/impersonation">
+    Impersonate users for support and testing
+  </Card>
+</CardGroup>

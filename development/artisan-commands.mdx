@@ -1,0 +1,656 @@
+---
+title: Artisan Commands
+description: Custom artisan commands available in the Northwestern Laravel Starter
+---
+
+The Northwestern Laravel Starter includes several custom artisan commands to streamline development workflows.
+
+## Database Commands
+
+### Rebuild Database
+
+```bash
+php artisan db:rebuild
+```
+
+Rebuild the database from scratch with fresh migrations and seeders.
+
+**Location**: `app/Console/Commands/RebuildDatabaseCommand.php:24`
+
+<AccordionGroup>
+  <Accordion title="What it does">
+    <Steps>
+      <Step title="Clearing cache">
+        Clears application cache (ignores errors if cache table doesn't exist)
+      </Step>
+      <Step title="Clearing queue">
+        Clears all pending jobs from the queue
+      </Step>
+      <Step title="Clearing schedule cache">
+        Clears the scheduled task cache
+      </Step>
+      <Step title="Running migrations">
+        Drops all tables and re-runs migrations (`migrate:fresh`)
+      </Step>
+      <Step title="Seeding database">
+        Seeds production data via `DatabaseSeeder`
+      </Step>
+      <Step title="Seeding demo data">
+        Seeds development/demo data via `DemoSeeder`
+      </Step>
+      <Step title="Generating IDE helpers">
+        Regenerates IDE helper files for better code completion
+      </Step>
+    </Steps>
+  </Accordion>
+  
+  <Accordion title="Example Output">
+    ```
+    Rebuilding Database
+    
+    ⏳ Clearing cache
+    ⏳ Clearing queue
+    ⏳ Clearing schedule cache
+    ⏳ Running migrations
+    ⏳ Seeding database
+    ⏳ Seeding demo data
+    ⏳ Generating IDE helpers
+    
+    ✓ Database rebuild complete
+    
+    ⚠  There are 5 jobs pending in the queue.
+       → Run php artisan queue:work to process them
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+This command cannot be run in production as it drops all tables and data.
+</Warning>
+
+---
+
+### Wake Database
+
+```bash
+php artisan db:wake
+```
+
+Wakes a potentially inactive serverless RDS database by establishing a connection.
+
+**Location**: `app/Console/Commands/WakeDatabaseCommand.php:17`
+
+<ParamField path="--max-attempts" type="integer" default="5">
+  Maximum number of connection attempts (1-20)
+</ParamField>
+
+<ParamField path="--delay" type="integer" default="5">
+  Seconds to wait between attempts (1-30)
+</ParamField>
+
+**Example:**
+
+```bash
+php artisan db:wake --max-attempts=10 --delay=10
+```
+
+<Tip>
+Useful as a deployment hook to avoid first-request timeouts with serverless databases.
+</Tip>
+
+---
+
+## Database Snapshot Commands
+
+Manage database snapshots with schema validation.
+
+### Create Snapshot
+
+```bash
+php artisan db:snapshot:create [filename]
+```
+
+Creates a database snapshot with schema validation.
+
+**Location**: `app/Console/Commands/DatabaseSnapshots/CreateDatabaseSnapshotCommand.php:27`
+
+<ParamField path="filename" type="string">
+  Optional name for the snapshot file
+</ParamField>
+
+<ParamField path="--skip-schema-validation" type="boolean">
+  Skip schema validation checks
+</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash Create with Auto Name
+php artisan db:snapshot:create
+```
+
+```bash Create with Custom Name
+php artisan db:snapshot:create my-feature-ready
+```
+
+```bash Skip Validation
+php artisan db:snapshot:create --skip-schema-validation
+```
+</CodeGroup>
+
+---
+
+### Restore Snapshot
+
+```bash
+php artisan db:snapshot:restore [filename]
+```
+
+Restores a database snapshot with schema validation.
+
+**Location**: `app/Console/Commands/DatabaseSnapshots/RestoreDatabaseSnapshotCommand.php:35`
+
+<ParamField path="filename" type="string">
+  The snapshot file name (without extension) to restore
+</ParamField>
+
+<ParamField path="--skip-schema-validation" type="boolean">
+  Skip schema validation checks
+</ParamField>
+
+<ParamField path="--backup" type="boolean">
+  Create a backup before restoring
+</ParamField>
+
+<ParamField path="--force" type="boolean">
+  Skip confirmation prompt
+</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash Basic Restore
+php artisan db:snapshot:restore my-snapshot
+```
+
+```bash Restore with Backup
+php artisan db:snapshot:restore my-snapshot --backup
+```
+
+```bash Force Restore
+php artisan db:snapshot:restore my-snapshot --force
+```
+</CodeGroup>
+
+---
+
+### List Snapshots
+
+```bash
+php artisan db:snapshot:list
+```
+
+List all available database snapshots and optionally restore one interactively.
+
+**Location**: `app/Console/Commands/DatabaseSnapshots/ListDatabaseSnapshotsCommand.php:17`
+
+---
+
+### Snapshot Info
+
+```bash
+php artisan db:snapshot:info [filename]
+```
+
+View detailed information about a specific snapshot.
+
+**Location**: `app/Console/Commands/DatabaseSnapshots/InfoDatabaseSnapshotCommand.php`
+
+---
+
+### Delete Snapshot
+
+```bash
+php artisan db:snapshot:delete [filename]
+```
+
+Delete a database snapshot.
+
+**Location**: `app/Console/Commands/DatabaseSnapshots/DeleteDatabaseSnapshotCommand.php`
+
+---
+
+## Seeder Commands
+
+### List Seeders
+
+```bash
+php artisan db:seed:list
+```
+
+List all discoverable seeders with their dependencies.
+
+**Location**: `app/Console/Commands/AutoSeedListCommand.php:17`
+
+<ParamField path="--show-dependencies" type="boolean">
+  Show full dependency tree
+</ParamField>
+
+<ParamField path="--mermaid" type="boolean">
+  Output as Mermaid diagram for visualization
+</ParamField>
+
+<ParamField path="--json" type="boolean">
+  Output as JSON
+</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash Basic List
+php artisan db:seed:list
+```
+
+```bash With Dependencies
+php artisan db:seed:list --show-dependencies
+```
+
+```bash Mermaid Diagram
+php artisan db:seed:list --mermaid
+```
+
+```bash JSON Export
+php artisan db:seed:list --json
+```
+</CodeGroup>
+
+**Example Output:**
+
+```
+┌───┬──────────────────────────────┬──────────────────────────┐
+│ # │ Seeder                       │ Dependencies             │
+├───┼──────────────────────────────┼──────────────────────────┤
+│ 1 │ RolesAndPermissionsSeeder    │ none                     │
+│ 2 │ UsersSeeder                  │ RolesAndPermissionsSeeder│
+│ 3 │ ApiAccessTokensSeeder        │ UsersSeeder              │
+└───┴──────────────────────────────┴──────────────────────────┘
+```
+
+---
+
+## Configuration Commands
+
+### Validate Configuration
+
+```bash
+php artisan config:validate
+```
+
+Validates application configuration and system dependencies.
+
+**Location**: `app/Console/Commands/ValidateConfigurationCommand.php:29`
+
+<AccordionGroup>
+  <Accordion title="What it validates">
+    - **Application key**: Checks if `APP_KEY` is set
+    - **Environment variables**: Validates required environment variables
+    - **Database**: Tests database connection
+    - **Queue**: Verifies queue connection
+    - **Filesystem**: Checks S3/MinIO configuration
+    - **EventHub**: Validates EventHub configuration
+  </Accordion>
+  
+  <Accordion title="Example Output">
+    ```
+    Validating Application Configuration
+    
+    ⏳ Checking Application Key...
+    ✓ Application Key
+      Application key is set
+    
+    ⏳ Checking Environment Variables...
+    ✓ Environment Variables
+      All required environment variables are present
+    
+    ⏳ Checking Database Connection...
+    ✓ Database Connection
+      Successfully connected to database
+    
+    ⏳ Checking Queue Connection...
+    ✓ Queue Connection
+      Queue connection is operational
+    
+    ⏳ Checking Filesystem Configuration...
+    ✓ Filesystem Configuration
+      S3/MinIO filesystem is properly configured
+    
+    ⏳ Checking EventHub Configuration...
+    ✓ EventHub Configuration
+      EventHub is properly configured
+    
+    ─────────────────────────────────────────────────
+    
+    ✓ All 6 checks passed
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+Run this command after initial setup or when debugging configuration issues.
+</Tip>
+
+---
+
+### Starter Version Check
+
+```bash
+php artisan starter:check
+```
+
+Checks for newer releases of the Northwestern Laravel Starter.
+
+**Location**: `app/Console/Commands/StarterCheckCommand.php:26`
+
+<ParamField path="--version-file" type="string">
+  Path to `.starter-version.yaml` (defaults to project root)
+</ParamField>
+
+**Example Output:**
+
+```
+⚠ Northwestern Laravel Starter — 2 releases behind (v1.0.0 → v1.2.0)
+
+  v1.2.0                              2026-02-15  https://github.com/...
+  v1.1.0                              2026-01-20  https://github.com/...
+
+  Full diff                           https://github.com/.../compare/v1.0.0...v1.2.0
+
+  Review the releases above to see if any changes are relevant to your project.
+  To suppress these notices, set version: v1.2.0 in .starter-version.yaml
+```
+
+<Info>
+This command runs automatically after `composer install` in local environments.
+</Info>
+
+---
+
+## Changelog Commands
+
+### Create Changelog Entry
+
+```bash
+php artisan make:changelog [slug]
+```
+
+Scaffolds a new changelog Markdown file with YAML front matter.
+
+**Location**: `app/Console/Commands/MakeChangelogCommand.php:28`
+
+<ParamField path="slug" type="string">
+  URL-safe identifier for the entry (defaults to today's date)
+</ParamField>
+
+<ParamField path="--date" type="string">
+  The authored date in YYYY-MM-DD format (defaults to today)
+</ParamField>
+
+<ParamField path="--title" type="string">
+  Human-readable title for the entry
+</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash Auto-Generated
+php artisan make:changelog
+```
+
+```bash Custom Slug
+php artisan make:changelog feature-xyz-release
+```
+
+```bash Full Options
+php artisan make:changelog february-update --date=2026-02-15 --title="February 2026 Release"
+```
+</CodeGroup>
+
+Creates a file in `resources/changelogs/` that you can edit to add release notes.
+
+---
+
+## API Commands
+
+### Send Access Token Expiration Notifications
+
+```bash
+php artisan access-tokens:notify-expiration
+```
+
+Sends expiration notifications for access tokens approaching their expiration date.
+
+**Location**: `app/Console/Commands/SendAccessTokenExpirationNotificationsCommand.php:18`
+
+<AccordionGroup>
+  <Accordion title="Configuration">
+    Configure notification intervals in `config/api.php`:
+    
+    ```php
+    'expiration_notifications' => [
+        'enabled' => env('API_ACCESS_TOKEN_EXPIRATION_NOTIFICATIONS_ENABLED', true),
+        'intervals' => [30, 14, 7, 3, 1], // days before expiration
+    ],
+    ```
+  </Accordion>
+  
+  <Accordion title="Example Output">
+    ```
+    Checking for tokens expiring in: 30, 14, 7, 3, 1 days
+    
+    Found 2 token(s) expiring in 7 days
+    ⏳ Processing token for jdoe (john.doe@northwestern.edu)
+    ✓ Email sent successfully to john.doe@northwestern.edu
+    ⏳ Processing token for asmith (alice.smith@northwestern.edu)
+    ✓ Email sent successfully to alice.smith@northwestern.edu
+    
+    ✓ Successfully sent 2 notification(s)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+Schedule this command to run daily to automatically notify users of expiring tokens.
+</Tip>
+
+---
+
+## Testing Commands
+
+### Test NetID Update Webhook
+
+```bash
+php artisan netid:update:test {netId} {action}
+```
+
+Simulates NetID Update webhook messages for testing without relying on external systems.
+
+**Location**: `app/Console/Commands/TestNetIdUpdateCommand.php:32`
+
+<ParamField path="netId" type="string" required>
+  The NetID to include in the message
+</ParamField>
+
+<ParamField path="action" type="string" required>
+  The NetID update action to simulate (e.g., `terminated`, `updated`)
+</ParamField>
+
+<ParamField path="--via-queue" type="boolean">
+  Send via EventHub queue instead of directly to HTTP webhook
+</ParamField>
+
+**Examples:**
+
+<CodeGroup>
+```bash Terminate NetID
+php artisan netid:update:test jdoe terminated
+```
+
+```bash Via Queue
+php artisan netid:update:test jdoe terminated --via-queue
+```
+
+```bash Update NetID
+php artisan netid:update:test asmith updated
+```
+</CodeGroup>
+
+---
+
+## Development Workflow Commands
+
+These commands are defined in `composer.json` as convenient shortcuts.
+
+### Start Development Environment
+
+```bash
+composer dev
+```
+
+Starts all development services concurrently:
+- PHP development server (port 8000)
+- Queue worker
+- Laravel Pail (log viewer)
+- Vite dev server (HMR)
+
+---
+
+### Code Quality
+
+<Tabs>
+  <Tab title="Format PHP">
+    ```bash
+    composer format:php
+    ```
+    
+    Formats PHP code using Laravel Pint.
+  </Tab>
+  
+  <Tab title="Format Frontend">
+    ```bash
+    composer format:frontend
+    ```
+    
+    Formats TypeScript, JavaScript, CSS, Blade, JSON, YAML, XML, and Markdown files using Prettier.
+  </Tab>
+  
+  <Tab title="Analyze PHP">
+    ```bash
+    composer analyse:php
+    ```
+    
+    Runs PHPStan static analysis with Larastan.
+  </Tab>
+  
+  <Tab title="Run Rector">
+    ```bash
+    composer rector
+    ```
+    
+    Runs Rector for automated refactoring.
+    
+    Dry run:
+    ```bash
+    composer rector:dry
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+### IDE Helpers
+
+```bash
+composer ide-helper:generate
+```
+
+Generates IDE helper files for better code completion:
+- Model annotations
+- Facade annotations
+- Meta file for PhpStorm
+
+---
+
+### OpenAPI Schema Generation
+
+<Tabs>
+  <Tab title="Generate All">
+    ```bash
+    composer openapi:generate
+    ```
+    
+    Generates OpenAPI schema from PHP annotations.
+  </Tab>
+  
+  <Tab title="Generate V1 Only">
+    ```bash
+    composer openapi:generate:v1
+    ```
+    
+    Generates API v1 schema only (excludes v2) to `docs/schemas/api-schema.yaml`.
+  </Tab>
+</Tabs>
+
+---
+
+### All Quality Checks
+
+```bash
+composer all
+```
+
+Runs all code quality tools in sequence:
+1. Generate IDE helpers
+2. Run Rector refactoring
+3. Format PHP code
+4. Format frontend code
+5. Run PHPStan analysis
+
+<Tip>
+Run this before committing code to ensure consistent quality.
+</Tip>
+
+---
+
+## Scheduled Commands
+
+Some commands are designed to run on a schedule. Configure them in `app/Console/Kernel.php`:
+
+```php
+$schedule->command('access-tokens:notify-expiration')
+    ->daily()
+    ->at('09:00');
+
+$schedule->command('db:wake')
+    ->everyFiveMinutes()
+    ->when(fn () => config('database.serverless'));
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use db:rebuild Frequently" icon="rotate">
+    Regularly rebuild your database during development to catch migration and seeder issues early.
+  </Card>
+  
+  <Card title="Validate Before Deploy" icon="circle-check">
+    Run `config:validate` before deploying to catch configuration issues.
+  </Card>
+  
+  <Card title="Snapshot Before Changes" icon="camera">
+    Create database snapshots before risky migrations or data operations.
+  </Card>
+  
+  <Card title="Run Quality Checks" icon="sparkles">
+    Use `composer all` before committing to maintain code quality.
+  </Card>
+</CardGroup>

@@ -1,0 +1,350 @@
+---
+title: Local Development Setup
+description: Set up your local development environment for the Northwestern Laravel Starter
+---
+
+This guide walks you through setting up a local development environment for the Northwestern Laravel Starter application.
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+- **PHP 8.4+** with required extensions
+- **PostgreSQL 16+**
+- **Node.js 25.0.0+** and **pnpm 10.0.0+**
+- **Composer 2.x**
+- **Redis** (for queue and cache)
+
+<Tip>
+The Northwestern Laravel Starter is optimized for [Laravel Herd](https://herd.laravel.com/), which provides PHP, PostgreSQL, Redis, and other services out of the box.
+</Tip>
+
+## Initial Setup
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone your project repository to your local machine:
+    
+    ```bash
+    git clone <your-repository-url>
+    cd <your-project-directory>
+    ```
+  </Step>
+
+  <Step title="Install PHP dependencies">
+    Install Composer dependencies:
+    
+    ```bash
+    composer install
+    ```
+    
+    This will automatically:
+    - Discover Laravel packages
+    - Upgrade Filament components
+    - Check for Northwestern Laravel Starter updates
+  </Step>
+
+  <Step title="Install frontend dependencies">
+    Install Node.js dependencies using pnpm:
+    
+    ```bash
+    pnpm install
+    ```
+  </Step>
+
+  <Step title="Configure environment">
+    Copy the example environment file and configure it:
+    
+    ```bash
+    cp .env.example .env
+    ```
+    
+    Generate an application key:
+    
+    ```bash
+    php artisan key:generate
+    ```
+  </Step>
+
+  <Step title="Create databases">
+    Create two PostgreSQL databases:
+    
+    ```bash
+    # Main development database
+    createdb northwestern_laravel_starter_local
+    
+    # PHPUnit test database
+    createdb northwestern_laravel_starter_test
+    ```
+  </Step>
+
+  <Step title="Configure MinIO (S3-compatible storage)">
+    The starter uses MinIO for local file storage. Update your `.env`:
+    
+    ```env .env
+    AWS_ACCESS_KEY_ID=herd
+    AWS_SECRET_ACCESS_KEY=secretkey
+    AWS_DEFAULT_REGION=us-east-1
+    AWS_URL=https://minio.adoes.northwestern.edu
+    AWS_ENDPOINT=https://minio.adoes.northwestern.edu
+    AWS_USE_PATH_STYLE_ENDPOINT=true
+    AWS_BUCKET=northwestern-laravel-starter
+    AWS_MINIO_CONSOLE=http://localhost:9000
+    ```
+    
+    <Warning>
+    Remember to provision a bucket in the MinIO console before uploading files.
+    </Warning>
+  </Step>
+
+  <Step title="Build the database">
+    Run migrations and seed the database:
+    
+    ```bash
+    php artisan migrate:fresh --seed
+    ```
+    
+    Or use the convenient rebuild command:
+    
+    ```bash
+    php artisan db:rebuild
+    ```
+    
+    This command will:
+    - Clear caches
+    - Clear queue
+    - Run fresh migrations
+    - Seed the database
+    - Seed demo data
+    - Generate IDE helpers
+  </Step>
+
+  <Step title="Compile frontend assets">
+    Build frontend assets:
+    
+    ```bash
+    pnpm run build
+    ```
+    
+    Or start the development server with hot reload:
+    
+    ```bash
+    pnpm run dev
+    ```
+  </Step>
+
+  <Step title="Validate configuration">
+    Verify your setup is correct:
+    
+    ```bash
+    php artisan config:validate
+    ```
+    
+    This validates:
+    - Application key
+    - Environment variables
+    - Database connection
+    - Queue connection
+    - Filesystem configuration
+    - EventHub configuration
+  </Step>
+</Steps>
+
+## Environment Configuration
+
+Here are the key environment variables you'll need to configure:
+
+### Database
+
+```env .env
+DB_CONNECTION=pgsql
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_DATABASE=northwestern_laravel_starter_local
+DB_USERNAME=root
+DB_PASSWORD=
+
+# PHPUnit test database
+DB_PHPUNIT_DATABASE=northwestern_laravel_starter_test
+```
+
+### Session & Cache
+
+```env .env
+SESSION_DRIVER=database
+SESSION_LIFETIME=480
+SESSION_ENCRYPT=true
+SESSION_SECURE_COOKIE=true
+
+CACHE_STORE=file
+```
+
+### Queue & Redis
+
+```env .env
+QUEUE_CONNECTION=redis
+
+REDIS_HOST=127.0.0.1
+REDIS_PASSWORD=null
+REDIS_PORT=6379
+```
+
+### Local Authentication
+
+```env .env
+# Enable local authentication for development
+LOCAL_AUTH_ENABLED=true
+
+# Comma-separated NetIDs for super admin access
+SUPER_ADMIN_NETIDS=your-netid
+```
+
+### Microsoft Entra ID (SSO)
+
+```env .env
+AZURE_CLIENT_ID=
+AZURE_CLIENT_SECRET=
+```
+
+### API Configuration
+
+```env .env
+API_ENABLED=true
+API_REQUEST_LOGGING_ENABLED=true
+API_REQUEST_LOG_RETENTION_DAYS=90
+API_DEMO_USER_ACCESS_TOKEN=
+```
+
+### Rate Limiting
+
+```env .env
+RATE_LIMIT_API_PER_MINUTE=1800
+RATE_LIMIT_AUTH_LOGIN_CODE_REQUEST_PER_MINUTE=5
+RATE_LIMIT_AUTH_LOGIN_CODE_VERIFY_PER_MINUTE=10
+```
+
+### Northwestern Integrations
+
+<Tabs>
+  <Tab title="Directory Search">
+    ```env .env
+    DIRECTORY_SEARCH_API_KEY=
+    WILDCARD_PHOTO_SYNC_ENABLED=false
+    ```
+  </Tab>
+  
+  <Tab title="EventHub">
+    ```env .env
+    EVENT_HUB_MOCK_ENABLED=true
+    EVENT_HUB_BASE_URL=https://northwestern-dev.apigee.net
+    EVENT_HUB_API_KEY=
+    EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET=
+    ```
+  </Tab>
+  
+  <Tab title="Changelog (Jira)">
+    ```env .env
+    CHANGELOG_ENABLED=false
+    JIRA_URL=https://nuitadminsystems.atlassian.net
+    JIRA_ISSUE_IDENTIFIER=
+    ```
+  </Tab>
+</Tabs>
+
+## Running the Application
+
+### Development Server
+
+The easiest way to run the application is using the `dev` composer script, which starts all necessary services:
+
+```bash
+composer dev
+```
+
+This command starts:
+- **PHP development server** (port 8000)
+- **Queue worker** (listens for jobs)
+- **Laravel Pail** (real-time log viewer)
+- **Vite dev server** (hot module replacement)
+
+### Individual Services
+
+You can also run services individually:
+
+<CodeGroup>
+```bash PHP Server
+php artisan serve
+```
+
+```bash Queue Worker
+php artisan queue:listen --tries=1
+```
+
+```bash Logs
+php artisan pail --timeout=0
+```
+
+```bash Vite
+pnpm run dev
+```
+</CodeGroup>
+
+### Accessing the Application
+
+Once running, access the application at:
+
+- **Main application**: http://localhost:8000 (or your configured `APP_URL`)
+- **Admin panel**: http://localhost:8000/admin
+- **MinIO console**: http://localhost:9000
+
+## PostgreSQL Binary Path (for Cypress)
+
+If you're using Laravel Herd and plan to run Cypress tests, you may need to configure the PostgreSQL binary path:
+
+<Tabs>
+  <Tab title="Windows">
+    ```env .env
+    PG_BIN_DIRECTORY="C:\\Users\\<your-username>\\.config\\herd\\bin\\services\\postgresql\\16\\bin"
+    ```
+  </Tab>
+  
+  <Tab title="macOS">
+    ```env .env
+    PG_BIN_DIRECTORY=/Users/Shared/Herd/services/postgresql/16/bin/
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+Leave this blank for Cypress to auto-discover the PostgreSQL binary directory.
+</Info>
+
+## Creating a Super Administrator
+
+Add your NetID to the `SUPER_ADMIN_NETIDS` environment variable:
+
+```env .env
+SUPER_ADMIN_NETIDS=your-netid,another-netid
+```
+
+After logging in for the first time, your account will automatically be assigned the Super Administrator role.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Management" icon="database" href="/development/database-management">
+    Learn how to manage database snapshots and rebuild your database
+  </Card>
+  
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Run PHPUnit and Cypress tests
+  </Card>
+  
+  <Card title="Artisan Commands" icon="terminal" href="/development/artisan-commands">
+    Explore custom artisan commands
+  </Card>
+  
+  <Card title="API Documentation" icon="code" href="/api/overview">
+    Integrate with the REST API
+  </Card>
+</CardGroup>

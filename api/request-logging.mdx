@@ -1,0 +1,335 @@
+---
+title: 'API Request Logging'
+description: 'Comprehensive request logging with performance tracking, failure analysis, sampling, and automatic retention management'
+---
+
+## Overview
+
+API request logging captures detailed metadata for all authenticated API requests, providing visibility into API usage, performance, and failures. Logs are stored in the database and automatically pruned based on retention policies.
+
+## What Gets Logged
+
+The middleware captures comprehensive request and response metadata:
+
+### Request Metadata
+
+<ParamField path="trace_id" type="uuid">
+  Unique identifier for request correlation. Included in response headers as `X-Trace-Id` and in error responses.
+</ParamField>
+
+<ParamField path="user_id" type="integer">
+  ID of the authenticated API user. Null for unauthenticated requests that produced a failure.
+</ParamField>
+
+<ParamField path="access_token_id" type="integer">
+  ID of the access token used for authentication. Null if authentication failed.
+</ParamField>
+
+<ParamField path="method" type="string">
+  HTTP method (GET, POST, PUT, DELETE, etc.).
+</ParamField>
+
+<ParamField path="path" type="string">
+  Request path without query parameters (e.g., `/api/v1/users/123`).
+</ParamField>
+
+<ParamField path="route_name" type="string" nullable>
+  Named route identifier if available (e.g., `api.users.show`).
+</ParamField>
+
+<ParamField path="ip_address" type="string">
+  Client IP address. Falls back to `"unknown"` if IP cannot be determined.
+</ParamField>
+
+<ParamField path="user_agent" type="string" nullable>
+  Client User-Agent header for identifying applications and versions.
+</ParamField>
+
+### Response Metadata
+
+<ParamField path="status_code" type="integer">
+  HTTP response status code (200, 401, 404, 500, etc.).
+</ParamField>
+
+<ParamField path="duration_ms" type="integer">
+  Request processing time in milliseconds, measured from middleware entry to exit.
+</ParamField>
+
+<ParamField path="request_bytes" type="integer" nullable>
+  Size of request body in bytes from `Content-Length` header. Null if not provided or zero.
+</ParamField>
+
+<ParamField path="response_bytes" type="integer" nullable>
+  Size of response body in bytes. Null for streamed responses.
+</ParamField>
+
+### Failure Tracking
+
+<ParamField path="failure_reason" type="enum" nullable>
+  Specific failure reason if request failed. See [Error Handling](/api/error-handling#failure-reasons) for all possible values.
+</ParamField>
+
+**Implementation:** `app/Domains/Auth/Http/Middleware/LogsApiRequests.php:75`
+
+## Configuration
+
+### Enable/Disable Logging
+
+<ParamField path="API_REQUEST_LOGGING_ENABLED" type="boolean" default="true">
+  Master toggle for request logging. When disabled, no requests are logged.
+</ParamField>
+
+```php
+// config/api.php
+'request_logging' => [
+    'enabled' => env('API_REQUEST_LOGGING_ENABLED', true),
+    // ...
+],
+```
+
+### Slow Request Threshold
+
+<ParamField path="API_REQUEST_LOGGING_SLOW_THRESHOLD_MS" type="integer" default="500">
+  Threshold in milliseconds to categorize requests as "slow" for monitoring and alerting purposes.
+</ParamField>
+
+```php
+// config/api.php
+'slow_request_threshold_ms' => (int) env('API_REQUEST_LOGGING_SLOW_THRESHOLD_MS', 500),
+```
+
+<Note>
+  This threshold is for internal categorization only. All requests are logged regardless of duration (subject to sampling rules).
+</Note>
+
+### Data Retention
+
+<ParamField path="API_REQUEST_LOG_RETENTION_DAYS" type="integer" default="90">
+  Number of days to retain logs before automatic deletion. Set to `null` to disable pruning (not recommended).
+</ParamField>
+
+```php
+// config/api.php
+'retention_days' => (int) env('API_REQUEST_LOG_RETENTION_DAYS', 90),
+```
+
+**Automatic Pruning:**
+
+Old logs are automatically deleted using Laravel's model pruning feature:
+
+```bash
+php artisan model:prune
+```
+
+Schedule this command to run daily in production:
+
+```php
+// app/Console/Kernel.php
+$schedule->command('model:prune')->daily();
+```
+
+**Implementation:** `app/Domains/Auth/Models/ApiRequestLog.php:33`
+
+<Warning>
+  High-traffic applications can generate significant log volume. Monitor database size and adjust retention or enable sampling as needed.
+</Warning>
+
+## Request Sampling
+
+Sampling reduces storage requirements by logging only a percentage of successful requests while always logging failures.
+
+### Sampling Rules
+
+The middleware applies sampling with these rules:
+
+1. **Sampling disabled** → Log all requests
+2. **Status code ≥ 400** → Always log (errors are critical)
+3. **Authentication failure** → Always log (security events are critical)
+4. **Otherwise** → Apply probabilistic sampling to successful requests
+
+### Configuration
+
+<ParamField path="API_REQUEST_LOGGING_SAMPLING_ENABLED" type="boolean" default="false">
+  Enable probabilistic sampling for successful requests. Errors always logged regardless.
+</ParamField>
+
+<ParamField path="API_REQUEST_LOGGING_SAMPLE_RATE" type="float" default="1.0">
+  Sampling rate for successful requests (0.0 to 1.0). Examples:
+  - `1.0` = 100% (log all successful requests)
+  - `0.1` = 10% (log 10% of successful requests)
+  - `0.01` = 1% (log 1% of successful requests)
+</ParamField>
+
+```php
+// config/api.php
+'sampling' => [
+    'enabled' => env('API_REQUEST_LOGGING_SAMPLING_ENABLED', false),
+    'rate' => (float) env('API_REQUEST_LOGGING_SAMPLE_RATE', 1.0),
+],
+```
+
+**Implementation:** `app/Domains/Auth/Http/Middleware/LogsApiRequests.php:113`
+
+### Sampling Example
+
+For a high-traffic API receiving 1 million requests per day:
+
+- **Without sampling:** 1,000,000 log entries per day
+- **10% sampling (0.1 rate):**
+  - Successful requests (95%): 950,000 × 0.1 = 95,000 logged
+  - Failed requests (5%): 50,000 × 1.0 = 50,000 logged (always)
+  - **Total: 145,000 log entries per day** (85% reduction)
+
+<Note>
+  Sampling provides representative data for performance analysis while maintaining complete error visibility.
+</Note>
+
+## Trace ID Correlation
+
+Every logged request includes a unique trace ID for request correlation:
+
+### Response Header
+
+All API responses include the trace ID in headers:
+
+```http
+X-Trace-Id: b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f
+```
+
+### Error Responses
+
+RFC 9457 error responses include the trace ID in the JSON body:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Authentication failed",
+  "instance": "/api/v1/users",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+### Finding Logs by Trace ID
+
+Use trace IDs to locate specific requests in the database:
+
+```sql
+SELECT * FROM api_request_logs 
+WHERE trace_id = 'b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f';
+```
+
+Or via Eloquent:
+
+```php
+ApiRequestLog::where('trace_id', $traceId)->first();
+```
+
+## Logging Behavior
+
+### When Requests Are Logged
+
+<AccordionGroup>
+  <Accordion title="Authenticated successful requests">
+    Logged according to sampling configuration. If sampling is disabled, all requests logged.
+  </Accordion>
+
+  <Accordion title="Authentication failures">
+    Always logged with specific failure reason, even if user is null.
+  </Accordion>
+
+  <Accordion title="Validation errors and 4xx responses">
+    Always logged regardless of sampling settings.
+  </Accordion>
+
+  <Accordion title="Server errors (5xx)">
+    Always logged regardless of sampling settings.
+  </Accordion>
+
+  <Accordion title="Completely unauthenticated requests (no token)">
+    Not logged if no failure reason exists (e.g., 404 on API route before auth middleware).
+  </Accordion>
+</AccordionGroup>
+
+### Framework-Level Exceptions
+
+Some exceptions occur before the middleware stack executes:
+
+- Route not found (404)
+- Method not allowed (405)
+- Payload too large (413)
+
+These will **not** produce log entries because the logging middleware never executes.
+
+**Implementation Note:** `app/Domains/Auth/Http/Middleware/LogsApiRequests.php:54`
+
+```php
+// Skip logging completely unauthenticated requests without a failure reason
+if (! $userId && ! $failureReason) {
+    return $response;
+}
+```
+
+## Performance Considerations
+
+### Database Write Efficiency
+
+Log writes are optimized:
+
+- Logs are created asynchronously after response is sent
+- Write failures are silently ignored to avoid impacting API responses
+- No transactions or locks held during logging
+
+**Implementation:** `app/Domains/Auth/Http/Middleware/LogsApiRequests.php:90`
+
+```php
+try {
+    ApiRequestLog::create([...]);
+} catch (Exception) {
+    // Silently ignore logging failures to avoid impacting the API response
+}
+```
+
+### Streamed Responses
+
+For streamed responses (e.g., file downloads), response size is not calculated to avoid buffering the entire response.
+
+```php
+if (! $response instanceof StreamedResponse) {
+    // Calculate response size
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Enable sampling for high-traffic APIs">
+    If you receive >100,000 requests per day, enable sampling at 0.1 (10%) or lower. This maintains statistical significance while reducing storage costs.
+  </Accordion>
+
+  <Accordion title="Use external observability for production">
+    Request logs are useful for troubleshooting but are not a replacement for dedicated observability platforms (Datadog, New Relic, Sentry).
+  </Accordion>
+
+  <Accordion title="Set appropriate retention periods">
+    Balance compliance requirements with storage costs:
+    - **30 days** - Development/staging environments
+    - **90 days** - Production (default)
+    - **180+ days** - Compliance-heavy industries
+  </Accordion>
+
+  <Accordion title="Monitor database growth">
+    Track `api_request_logs` table size and adjust sampling/retention if it grows too large.
+  </Accordion>
+
+  <Accordion title="Archive before pruning (if needed)">
+    Export logs to cold storage before automatic pruning if you need long-term archival.
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+- [Access Tokens](/api/access-tokens) - View request logs per access token
+- [Error Handling](/api/error-handling) - Understand failure reasons in logs
+- [Rate Limiting](/api/rate-limiting) - Rate limit hits are logged with 429 status

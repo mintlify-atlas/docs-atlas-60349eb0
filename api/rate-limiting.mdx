@@ -1,0 +1,339 @@
+---
+title: 'Rate Limiting'
+description: 'Flexible rate limiting with per-user and per-IP controls, tiered limits, and standard Retry-After headers'
+---
+
+## Overview
+
+Rate limiting protects the API from abuse and ensures fair resource allocation. The system uses Laravel's built-in throttling with configurable limits based on request type and authentication status.
+
+## API Rate Limiting
+
+### Global API Limit
+
+All API routes (`/api/*`) are protected by a global rate limit applied via the `throttleApi()` middleware.
+
+<ParamField path="RATE_LIMIT_API_PER_MINUTE" type="integer" default="1800">
+  Maximum API requests per minute. Keyed by authenticated user ID or IP address for unauthenticated requests.
+</ParamField>
+
+```php
+// config/rate-limiting.php
+'api' => [
+    'per_minute' => (int) env('RATE_LIMIT_API_PER_MINUTE', 1800),
+],
+```
+
+**Implementation:** `bootstrap/app.php:35`
+
+```php
+$middleware->throttleApi();
+```
+
+### Rate Limit Keys
+
+- **Authenticated requests:** Keyed by `user_id` (shared across all tokens for that user)
+- **Unauthenticated requests:** Keyed by IP address
+
+<Note>
+  Multiple access tokens for the same user share the same rate limit quota. This prevents bypassing limits by creating multiple tokens.
+</Note>
+
+### Default Limits
+
+The default limit of **1,800 requests per minute** (30 requests per second) is generous for most use cases:
+
+- **Sufficient for:** Most integrations, dashboards, mobile apps
+- **May need adjustment for:** High-frequency webhooks, real-time data feeds, bulk imports
+
+## Authentication Rate Limiting
+
+Protection against brute force attacks on authentication endpoints:
+
+### Login Code Request
+
+Limits for requesting passwordless login codes:
+
+<ParamField path="RATE_LIMIT_AUTH_LOGIN_CODE_REQUEST_PER_MINUTE" type="integer" default="5">
+  Maximum login code requests per minute per IP address.
+</ParamField>
+
+<ParamField path="RATE_LIMIT_AUTH_LOGIN_CODE_REQUEST_PER_EMAIL_PER_MINUTE" type="integer" default="3">
+  Maximum login code requests per minute per email address (prevents targeting specific accounts).
+</ParamField>
+
+```php
+// config/rate-limiting.php
+'auth' => [
+    'login_code' => [
+        'request' => [
+            'per_minute' => (int) env('RATE_LIMIT_AUTH_LOGIN_CODE_REQUEST_PER_MINUTE', 5),
+            'per_email_per_minute' => (int) env('RATE_LIMIT_AUTH_LOGIN_CODE_REQUEST_PER_EMAIL_PER_MINUTE', 3),
+        ],
+        // ...
+    ],
+],
+```
+
+### Login Code Verification
+
+Limits for verifying login codes:
+
+<ParamField path="RATE_LIMIT_AUTH_LOGIN_CODE_VERIFY_PER_MINUTE" type="integer" default="10">
+  Maximum verification attempts per minute per IP address.
+</ParamField>
+
+<ParamField path="RATE_LIMIT_AUTH_LOGIN_CODE_VERIFY_PER_CHALLENGE_PER_MINUTE" type="integer" default="5">
+  Maximum verification attempts per minute per challenge token (prevents brute forcing specific codes).
+</ParamField>
+
+```php
+'verify' => [
+    'per_minute' => (int) env('RATE_LIMIT_AUTH_LOGIN_CODE_VERIFY_PER_MINUTE', 10),
+    'per_challenge_per_minute' => (int) env('RATE_LIMIT_AUTH_LOGIN_CODE_VERIFY_PER_CHALLENGE_PER_MINUTE', 5),
+],
+```
+
+### User Impersonation
+
+Protection for the privileged impersonation feature:
+
+<ParamField path="RATE_LIMIT_AUTH_IMPERSONATE_PER_MINUTE" type="integer" default="10">
+  Maximum impersonation attempts per minute per IP address.
+</ParamField>
+
+```php
+'impersonate' => [
+    'per_minute' => (int) env('RATE_LIMIT_AUTH_IMPERSONATE_PER_MINUTE', 10),
+],
+```
+
+## Support Rate Limiting
+
+Multi-tiered protection for contact form submissions:
+
+<ParamField path="RATE_LIMIT_SUPPORT_CONTACT_PER_MINUTE" type="integer" default="2">
+  Maximum contact form submissions per minute per IP.
+</ParamField>
+
+<ParamField path="RATE_LIMIT_SUPPORT_CONTACT_PER_HOUR" type="integer" default="5">
+  Maximum contact form submissions per hour per IP.
+</ParamField>
+
+<ParamField path="RATE_LIMIT_SUPPORT_CONTACT_PER_DAY" type="integer" default="10">
+  Maximum contact form submissions per day per IP.
+</ParamField>
+
+```php
+// config/rate-limiting.php
+'support' => [
+    'contact' => [
+        'per_minute' => (int) env('RATE_LIMIT_SUPPORT_CONTACT_PER_MINUTE', 2),
+        'per_hour' => (int) env('RATE_LIMIT_SUPPORT_CONTACT_PER_HOUR', 5),
+        'per_day' => (int) env('RATE_LIMIT_SUPPORT_CONTACT_PER_DAY', 10),
+    ],
+],
+```
+
+<Note>
+  Tiered rate limits allow short bursts (2/minute) while preventing sustained abuse over longer windows.
+</Note>
+
+## Rate Limit Responses
+
+### 429 Too Many Requests
+
+When rate limits are exceeded, the API returns a standardized RFC 9457 error response:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Too Many Requests",
+  "status": 429,
+  "detail": "Too many requests. Please try again later.",
+  "instance": "/api/v1/users",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+### Response Headers
+
+Rate limit responses include standard headers:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Content-Type: application/problem+json
+Retry-After: 60
+X-Trace-Id: b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f
+```
+
+<ParamField path="Retry-After" type="integer">
+  Number of seconds to wait before retrying. Typically 60 seconds for per-minute limits.
+</ParamField>
+
+**Implementation:** `app/Http/Responses/ProblemDetails.php:187`
+
+```php
+public static function tooManyRequests(
+    string $detail = 'Too many requests', 
+    int $retryAfter = 60, 
+    array $headers = []
+): JsonResponse {
+    return self::response(
+        status: Response::HTTP_TOO_MANY_REQUESTS,
+        title: 'Too Many Requests',
+        detail: $detail,
+        headers: array_merge(['Retry-After' => (string) $retryAfter], $headers)
+    );
+}
+```
+
+## Client Implementation
+
+### Respecting Rate Limits
+
+Well-behaved API clients should:
+
+1. **Check for 429 responses** and handle them gracefully
+2. **Read the `Retry-After` header** for the wait duration
+3. **Implement exponential backoff** for repeated failures
+4. **Avoid aggressive retries** that worsen the problem
+
+### Example: Python Client
+
+```python
+import requests
+import time
+
+def make_api_request(url, token):
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    while True:
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 429:
+            # Rate limited - wait before retrying
+            retry_after = int(response.headers.get('Retry-After', 60))
+            print(f"Rate limited. Waiting {retry_after} seconds...")
+            time.sleep(retry_after)
+            continue
+        
+        return response
+```
+
+### Example: JavaScript Client
+
+```javascript
+async function makeApiRequest(url, token) {
+  while (true) {
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (response.status === 429) {
+      // Rate limited - wait before retrying
+      const retryAfter = parseInt(response.headers.get('Retry-After') || '60');
+      console.log(`Rate limited. Waiting ${retryAfter} seconds...`);
+      await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+      continue;
+    }
+    
+    return response;
+  }
+}
+```
+
+## Adjusting Rate Limits
+
+### When to Increase Limits
+
+Consider increasing limits if:
+
+- Legitimate users frequently hit rate limits
+- High-throughput integrations are necessary
+- Batch processing requires burst capacity
+
+### When to Decrease Limits
+
+Consider decreasing limits if:
+
+- Experiencing abuse or scraping attempts
+- Server resources are constrained
+- Specific endpoints need tighter controls
+
+### Per-Endpoint Customization
+
+For endpoint-specific limits, apply throttle middleware in routes:
+
+```php
+// routes/api.php
+Route::middleware(['auth:api', 'throttle:100,1'])->group(function () {
+    Route::post('/bulk-import', [ImportController::class, 'import']);
+});
+```
+
+Format: `throttle:{requests},{minutes}`
+
+## Monitoring Rate Limits
+
+### Request Logs
+
+Rate limit hits are logged with status code 429 and can be queried:
+
+```sql
+SELECT 
+    DATE(created_at) as date,
+    COUNT(*) as rate_limit_hits
+FROM api_request_logs
+WHERE status_code = 429
+GROUP BY DATE(created_at)
+ORDER BY date DESC;
+```
+
+### Per-User Analysis
+
+```sql
+SELECT 
+    users.name,
+    COUNT(*) as rate_limit_hits,
+    MAX(created_at) as last_hit
+FROM api_request_logs
+JOIN users ON api_request_logs.user_id = users.id
+WHERE status_code = 429
+  AND created_at >= NOW() - INTERVAL 7 DAY
+GROUP BY users.id, users.name
+ORDER BY rate_limit_hits DESC;
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Monitor rate limit hits">
+    Track 429 responses in request logs and investigate patterns. Frequent hits may indicate:
+    - Limits are too restrictive
+    - Client is misbehaving
+    - Legitimate high-volume use case needs accommodation
+  </Accordion>
+
+  <Accordion title="Implement client-side rate limiting">
+    Don't rely solely on server-side limits. Implement client-side throttling to avoid hitting limits.
+  </Accordion>
+
+  <Accordion title="Use exponential backoff">
+    When retrying after 429 responses, use exponential backoff to avoid thundering herd problems.
+  </Accordion>
+
+  <Accordion title="Document limits clearly">
+    Make rate limits visible in API documentation so clients can design accordingly.
+  </Accordion>
+
+  <Accordion title="Consider rate limit tiers">
+    For production APIs, consider different rate limits for different user tiers (free vs. paid).
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+- [Error Handling](/api/error-handling) - RFC 9457 structure for 429 responses
+- [Request Logging](/api/request-logging) - Rate limit hits are logged for analysis
+- [Access Tokens](/api/access-tokens) - Rate limits apply per-user, not per-token

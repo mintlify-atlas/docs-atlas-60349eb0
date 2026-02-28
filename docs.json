@@ -1,122 +1,146 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Northwestern Laravel Starter",
+  "theme": "linden",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#4E2A84",
+    "light": "#836EAA",
+    "dark": "#2E1A4F"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/NIT-Administrative-Systems/northwestern-laravel-starter"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/NIT-Administrative-Systems/northwestern-laravel-starter"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quick-start",
+              "project-structure"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Architecture",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "architecture/overview",
+              "architecture/domain-driven-design",
+              "architecture/actions-pattern",
+              "architecture/configuration"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Authentication & Authorization",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "auth/overview",
+              "auth/entra-id-sso",
+              "auth/email-verification",
+              "auth/roles-permissions",
+              "auth/impersonation"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "API Features",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "api/overview",
+              "api/access-tokens",
+              "api/request-logging",
+              "api/rate-limiting",
+              "api/error-handling"
+            ]
+          },
+          {
+            "group": "User Management",
+            "pages": [
+              "users/overview",
+              "users/provisioning",
+              "users/profiles",
+              "users/login-records"
+            ]
+          },
+          {
+            "group": "Auditing & Compliance",
+            "pages": [
+              "auditing/overview",
+              "auditing/audit-trail",
+              "auditing/data-security"
+            ]
+          },
+          {
+            "group": "Northwestern Integrations",
+            "pages": [
+              "integrations/overview",
+              "integrations/directory-service",
+              "integrations/eventhub"
+            ]
+          },
+          {
+            "group": "Frontend",
+            "pages": [
+              "frontend/overview",
+              "frontend/filament-admin",
+              "frontend/northwestern-theme",
+              "frontend/accessibility"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/local-setup",
+              "development/database-management",
+              "development/testing",
+              "development/artisan-commands"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/production-setup",
+              "deployment/environment-configuration",
+              "deployment/health-checks",
+              "deployment/monitoring"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Getting Started",
             "pages": [
-              "api-reference/introduction"
+              "api-reference/overview",
+              "api-reference/authentication",
+              "api-reference/errors"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Endpoints",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api-reference/user",
+              "api-reference/access-tokens"
+            ]
+          },
+          {
+            "group": "Webhooks",
+            "pages": [
+              "api-reference/eventhub-webhooks"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

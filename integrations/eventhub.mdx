@@ -1,0 +1,550 @@
+---
+title: 'EventHub Integration'
+description: 'Receive real-time event notifications from Northwestern University services'
+---
+
+EventHub is Northwestern's enterprise event bus that delivers real-time notifications about changes to users, organizations, and other university data.
+
+## Overview
+
+The EventHub integration enables your application to:
+
+- **Subscribe to Topics**: Listen for specific event types (e.g., NetID terminations, group membership changes)
+- **Webhook Delivery**: Receive events via HMAC-secured webhooks
+- **Event Processing**: React to Northwestern data changes in real-time
+- **Mock Mode**: Test webhook handlers locally without real event traffic
+
+## Configuration
+
+### Environment Setup
+
+Configure EventHub in your `.env` file:
+
+```bash .env
+EVENT_HUB_MOCK_ENABLED=false
+EVENT_HUB_BASE_URL=https://northwestern-prod.apigee.net/event-hub
+EVENT_HUB_API_KEY=your_api_key_here
+EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET=your_shared_secret
+EVENT_HUB_HMAC_VERIFICATION_HEADER=X-HMAC-Signature
+EVENT_HUB_HMAC_VERIFICATION_ALGORITHM_TYPE_REGISTRATION=HmacSHA256
+EVENT_HUB_HMAC_VERIFICATION_ALGORITHM_TYPE_PHP=sha256
+```
+
+<Steps>
+  <Step title="Request EventHub Access">
+    Contact Northwestern IT to request EventHub API credentials and webhook registration for your application.
+  </Step>
+  
+  <Step title="Configure Credentials">
+    Add the API key and HMAC shared secret to your `.env` file.
+  </Step>
+  
+  <Step title="Register Webhooks">
+    Register your webhook endpoints with EventHub to start receiving events.
+  </Step>
+  
+  <Step title="Verify Configuration">
+    Run the health check to validate your setup:
+    
+    ```bash
+    php artisan health:check
+    ```
+  </Step>
+</Steps>
+
+### Configuration Reference
+
+All EventHub settings are in `config/nusoa.php:28-40`:
+
+<CodeGroup>
+```php config/nusoa.php
+'eventHub' => [
+    'mock' => env('EVENT_HUB_MOCK_ENABLED', env('APP_ENV') == 'local'),
+    'baseUrl' => env('EVENT_HUB_BASE_URL'),
+    'apiKey' => env('EVENT_HUB_API_KEY'),
+    'hmacVerificationSharedSecret' => env('EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET'),
+    'hmacVerificationHeader' => env('EVENT_HUB_HMAC_VERIFICATION_HEADER', 'X-HMAC-Signature'),
+    
+    // HMAC algorithm for EventHub registration
+    'hmacVerificationAlgorithmForRegistration' => env('EVENT_HUB_HMAC_VERIFICATION_ALGORITHM_TYPE_REGISTRATION', 'HmacSHA256'),
+    
+    // PHP algorithm for hash_hmac() verification
+    'hmacVerificationAlgorithmForPHPHashHmac' => env('EVENT_HUB_HMAC_VERIFICATION_ALGORITHM_TYPE_PHP', 'sha256'),
+],
+```
+</CodeGroup>
+
+| Key | Description | Default |
+|-----|-------------|----------|
+| `mock` | Enable mock mode for local development | `true` in local env |
+| `baseUrl` | EventHub API endpoint | Required |
+| `apiKey` | Your EventHub API key | Required |
+| `hmacVerificationSharedSecret` | Shared secret for webhook HMAC | Required |
+| `hmacVerificationHeader` | HTTP header containing HMAC signature | `X-HMAC-Signature` |
+| `hmacVerificationAlgorithmForRegistration` | Algorithm type for EventHub registration | `HmacSHA256` |
+| `hmacVerificationAlgorithmForPHPHashHmac` | PHP algorithm for `hash_hmac()` | `sha256` |
+
+<Warning>
+  The `hmacVerificationSharedSecret` is used to verify webhook authenticity. Keep it secure and never commit it to version control.
+</Warning>
+
+## Webhook Setup
+
+Webhook routes are defined in `routes/api.php:48-52` with HMAC verification middleware:
+
+<CodeGroup>
+```php routes/api.php
+Route::middleware(['eventhub_hmac'])->prefix('eventhub')->group(function () {
+    // Example: Subscribe to NetID termination events
+    Route::post('netid-update', App\Domains\User\Http\Controllers\Webhooks\NetIdUpdateController::class)
+        ->eventHubWebhook('etidentity.ldap.netid.term')
+        ->name('netid-update');
+});
+```
+</CodeGroup>
+
+### Register a Webhook
+
+<Steps>
+  <Step title="Create Controller">
+    Create a controller to handle the webhook:
+    
+    ```php
+    namespace App\Domains\User\Http\Controllers\Webhooks;
+    
+    use Illuminate\Http\Request;
+    use Illuminate\Http\Response;
+    
+    class NetIdUpdateController
+    {
+        public function __invoke(Request $request): Response
+        {
+            // Parse the event payload
+            $eventData = $request->getContent();
+            
+            // Process the event
+            // ...
+            
+            return response()->noContent();
+        }
+    }
+    ```
+  </Step>
+  
+  <Step title="Define Route">
+    Add the webhook route with the EventHub topic:
+    
+    ```php routes/api.php
+    Route::post('netid-update', NetIdUpdateController::class)
+        ->eventHubWebhook('etidentity.ldap.netid.term')
+        ->name('netid-update');
+    ```
+  </Step>
+  
+  <Step title="Register with EventHub">
+    The `eventHubWebhook()` macro automatically registers your endpoint with EventHub using the topic name.
+  </Step>
+</Steps>
+
+### Available Topics
+
+Common EventHub topics include:
+
+| Topic | Description |
+|-------|-------------|
+| `etidentity.ldap.netid.term` | NetID termination events |
+| `etidentity.ldap.netid.create` | New NetID creation |
+| `etidentity.ldap.netid.modify` | NetID attribute changes |
+| `canvas.account.*` | Canvas account events |
+| `canvas.course.*` | Canvas course events |
+| `hr.employee.*` | HR employee data changes |
+
+<Info>
+  Contact Northwestern IT for a complete list of available topics and their payload schemas.
+</Info>
+
+## HMAC Verification
+
+All incoming EventHub webhooks are verified using HMAC signatures to ensure authenticity.
+
+### How It Works
+
+<Steps>
+  <Step title="EventHub Generates HMAC">
+    When sending a webhook, EventHub generates an HMAC signature using:
+    - The webhook payload (raw body)
+    - Your shared secret
+    - The configured algorithm (typically HmacSHA256)
+  </Step>
+  
+  <Step title="Signature Sent in Header">
+    The HMAC signature is sent in the HTTP header specified by `hmacVerificationHeader` (default: `X-HMAC-Signature`).
+  </Step>
+  
+  <Step title="Middleware Verifies">
+    The `eventhub_hmac` middleware automatically verifies the signature before allowing the request through.
+  </Step>
+</Steps>
+
+### HMAC Implementation
+
+The HMAC verification logic is shown in `app/Domains/Core/Concerns/MocksEventHub.php:83-93`:
+
+<CodeGroup>
+```php HMAC Verification
+private function makeHmacHeader(string $message): array
+{
+    $sharedSecret = config('nusoa.eventHub.hmacVerificationSharedSecret', '');
+    $algorithm = config('nusoa.eventHub.hmacVerificationAlgorithmForPHPHashHmac');
+    $headerName = config('nusoa.eventHub.hmacVerificationHeader');
+
+    $hmacHash = hash_hmac((string) $algorithm, $message, (string) $sharedSecret, true);
+    $encodedHash = base64_encode($hmacHash);
+
+    return [$headerName => $encodedHash];
+}
+```
+</CodeGroup>
+
+<Warning>
+  If HMAC verification fails, the webhook request is rejected with a 403 Forbidden response. Ensure your `EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET` matches what's configured in EventHub.
+</Warning>
+
+## Testing Webhooks Locally
+
+### Mock Mode
+
+Enable mock mode for local development:
+
+```bash .env
+EVENT_HUB_MOCK_ENABLED=true
+```
+
+When enabled, EventHub operations use local mocks that don't require network access or real credentials.
+
+### Simulating Events
+
+Use the `MocksEventHub` trait to test webhook handlers in `app/Domains/Core/Concerns/MocksEventHub.php:18-58`:
+
+<CodeGroup>
+```php Testing Example
+use App\Domains\Core\Concerns\MocksEventHub;
+use Tests\TestCase;
+
+class NetIdUpdateWebhookTest extends TestCase
+{
+    use MocksEventHub;
+
+    public function test_netid_termination_webhook()
+    {
+        // Simulate an event being sent to the webhook
+        $response = $this->send(
+            queue: 'etidentity.ldap.netid.term',
+            message: 'uid=abc123,status=terminated'
+        );
+
+        $response->assertStatus(204);
+        
+        // Assert your application handled the event correctly
+        $this->assertDatabaseHas('users', [
+            'username' => 'abc123',
+            'netid_inactive' => true,
+        ]);
+    }
+}
+```
+
+```php Send via Queue
+// Or send through the actual EventHub queue system
+$this->send(
+    queue: 'etidentity.ldap.netid.term',
+    message: 'uid=abc123,status=terminated',
+    viaQueue: true
+);
+```
+</CodeGroup>
+
+### Mock Methods
+
+The `MocksEventHub` trait provides:
+
+| Method | Description |
+|--------|-------------|
+| `send(string $queue, string $message, bool $viaQueue = false)` | Simulate an event delivery |
+| `getRouteForQueue(string $queue)` | Find the registered webhook route for a topic |
+| `makeHmacHeader(string $message)` | Generate a valid HMAC header for testing |
+
+<Info>
+  The `send()` method automatically generates valid HMAC signatures for your test requests.
+</Info>
+
+## Configuration Validation
+
+The `EventHubValidator` ensures all required credentials are configured in `app/Domains/Core/Services/ConfigValidation/EventHubValidator.php:28-46`:
+
+<CodeGroup>
+```php Validation Logic
+public function validate(): bool
+{
+    $this->isMocked = (bool) config('nusoa.eventHub.mock', true);
+
+    if ($this->isMocked) {
+        return true; // Skip validation in mock mode
+    }
+
+    $variables = collect([
+        'EVENT_HUB_BASE_URL' => config('nusoa.eventHub.baseUrl'),
+        'EVENT_HUB_API_KEY' => config('nusoa.eventHub.apiKey'),
+        'EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET' => config('nusoa.eventHub.hmacVerificationSharedSecret'),
+    ]);
+
+    $this->missingVariables = $variables
+        ->filter(fn ($value): bool => blank($value))
+        ->keys();
+
+    return $this->missingVariables->isEmpty();
+}
+```
+</CodeGroup>
+
+Run validation:
+
+```bash
+php artisan health:check
+```
+
+<Warning>
+  In production environments, ensure mock mode is disabled (`EVENT_HUB_MOCK_ENABLED=false`) and all required credentials are configured.
+</Warning>
+
+## Example: NetID Termination Handler
+
+Here's a complete example of handling NetID termination events:
+
+<Steps>
+  <Step title="Create Controller">
+    ```php app/Domains/User/Http/Controllers/Webhooks/NetIdUpdateController.php
+    namespace App\Domains\User\Http\Controllers\Webhooks;
+    
+    use App\Domains\User\Models\User;
+    use Illuminate\Http\Request;
+    use Illuminate\Http\Response;
+    use Illuminate\Support\Facades\Log;
+    
+    class NetIdUpdateController
+    {
+        public function __invoke(Request $request): Response
+        {
+            // Parse the URL-encoded event data
+            parse_str($request->getContent(), $data);
+            
+            $netId = $data['uid'] ?? null;
+            $status = $data['status'] ?? null;
+            
+            if ($status === 'terminated' && filled($netId)) {
+                $user = User::whereUsernameEquals($netId)->first();
+                
+                if ($user) {
+                    $user->update([
+                        'netid_inactive' => true,
+                        'directory_sync_last_failed_at' => now(),
+                    ]);
+                    
+                    Log::info('NetID terminated', ['netid' => $netId]);
+                }
+            }
+            
+            return response()->noContent();
+        }
+    }
+    ```
+  </Step>
+  
+  <Step title="Register Route">
+    ```php routes/api.php
+    Route::middleware(['eventhub_hmac'])->prefix('eventhub')->group(function () {
+        Route::post('netid-update', App\Domains\User\Http\Controllers\Webhooks\NetIdUpdateController::class)
+            ->eventHubWebhook('etidentity.ldap.netid.term')
+            ->name('netid-update');
+    });
+    ```
+  </Step>
+  
+  <Step title="Test Handler">
+    ```php tests/Feature/Webhooks/NetIdUpdateTest.php
+    use App\Domains\Core\Concerns\MocksEventHub;
+    use App\Domains\User\Models\User;
+    use Tests\TestCase;
+    
+    class NetIdUpdateTest extends TestCase
+    {
+        use MocksEventHub;
+        
+        public function test_marks_user_as_inactive_on_termination()
+        {
+            $user = User::factory()->create(['username' => 'abc123']);
+            
+            $response = $this->send(
+                queue: 'etidentity.ldap.netid.term',
+                message: 'uid=abc123&status=terminated'
+            );
+            
+            $response->assertStatus(204);
+            
+            $this->assertTrue($user->fresh()->netid_inactive);
+            $this->assertNotNull($user->fresh()->directory_sync_last_failed_at);
+        }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Webhooks Return 403 Forbidden">
+    **Symptom**: All EventHub webhook requests are rejected
+    
+    **Cause**: HMAC verification is failing
+    
+    **Solutions**:
+    - Verify `EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET` matches what's registered in EventHub
+    - Check that the algorithm configuration matches EventHub's settings
+    - Ensure the shared secret has no extra whitespace or line breaks
+    
+    **Test**:
+    ```php
+    // Log the HMAC details to debug
+    Log::debug('HMAC Config', [
+        'secret' => config('nusoa.eventHub.hmacVerificationSharedSecret'),
+        'algorithm' => config('nusoa.eventHub.hmacVerificationAlgorithmForPHPHashHmac'),
+        'header' => config('nusoa.eventHub.hmacVerificationHeader'),
+    ]);
+    ```
+  </Accordion>
+
+  <Accordion title="Events Not Being Received">
+    **Symptom**: Webhook endpoint never receives events
+    
+    **Checklist**:
+    - [ ] Webhook is registered with EventHub
+    - [ ] Your application URL is accessible from Northwestern's network
+    - [ ] The route is correctly defined with `eventHubWebhook()` macro
+    - [ ] Middleware group includes `eventhub_hmac`
+    - [ ] Topic name exactly matches the EventHub subscription
+    
+    **Verify Registration**:
+    ```bash
+    php artisan route:list --path=eventhub
+    ```
+  </Accordion>
+
+  <Accordion title="Mock Mode Not Working">
+    **Symptom**: `MocksEventHub::send()` fails
+    
+    **Possible Issues**:
+    - No route registered for the specified queue
+    - Route name doesn't match webhook registration
+    
+    **Check**:
+    ```php
+    // This will throw an exception if no route is found
+    $route = $this->getRouteForQueue('etidentity.ldap.netid.term');
+    dd($route);
+    ```
+  </Accordion>
+
+  <Accordion title="Health Check Warnings">
+    **Symptom**: Health check reports EventHub issues
+    
+    **Common Causes**:
+    - Missing environment variables
+    - Mock mode enabled in production
+    - Invalid API credentials
+    
+    **Solutions**:
+    ```bash
+    # Check configuration
+    php artisan config:show nusoa.eventHub
+    
+    # Verify all required variables are set
+    php artisan config:cache
+    php artisan health:check
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Idempotent Processing" icon="rotate">
+    Design webhook handlers to be idempotent. EventHub may deliver the same event multiple times.
+  </Card>
+  
+  <Card title="Quick Responses" icon="gauge-high">
+    Return 200-level responses quickly. Process long-running tasks in queued jobs.
+  </Card>
+  
+  <Card title="Error Logging" icon="file-lines">
+    Log all webhook processing errors for debugging and monitoring.
+  </Card>
+  
+  <Card title="Validation" icon="shield-check">
+    Always validate event payload structure before processing.
+  </Card>
+</CardGroup>
+
+<CodeGroup>
+```php Good: Queue Long Tasks
+public function __invoke(Request $request): Response
+{
+    parse_str($request->getContent(), $data);
+    
+    // Dispatch to queue for async processing
+    ProcessNetIdTerminationJob::dispatch($data);
+    
+    return response()->noContent(); // Quick response
+}
+```
+
+```php Bad: Slow Processing
+public function __invoke(Request $request): Response
+{
+    parse_str($request->getContent(), $data);
+    
+    // This blocks the webhook response!
+    $this->updateAllRelatedRecords($data); // Slow
+    $this->notifyExternalService($data);   // Slow
+    
+    return response()->noContent();
+}
+```
+</CodeGroup>
+
+## API Reference
+
+<CardGroup cols={2}>
+  <Card title="EventHub Config" icon="gear">
+    **Location**: `config/nusoa.php:28-40`
+    
+    All EventHub configuration settings.
+  </Card>
+  
+  <Card title="MocksEventHub Trait" icon="flask">
+    **Location**: `app/Domains/Core/Concerns/MocksEventHub.php`
+    
+    Testing utilities for webhook handlers.
+  </Card>
+  
+  <Card title="EventHubValidator" icon="circle-check">
+    **Location**: `app/Domains/Core/Services/ConfigValidation/EventHubValidator.php`
+    
+    Configuration validation service.
+  </Card>
+  
+  <Card title="Webhook Routes" icon="route">
+    **Location**: `routes/api.php:48-52`
+    
+    EventHub webhook route definitions.
+  </Card>
+</CardGroup>

@@ -1,0 +1,463 @@
+---
+title: Accessibility
+description: WCAG 2.1 compliance and accessibility best practices in Northwestern Laravel Starter
+---
+
+The Northwestern Laravel Starter is built with accessibility as a core principle, ensuring that all users can effectively interact with your application regardless of their abilities or the assistive technologies they use.
+
+## WCAG 2.1 Compliance
+
+The application follows the [Web Content Accessibility Guidelines (WCAG) 2.1](https://www.w3.org/WAI/WCAG21/quickref/) at **Level AA**, which is the standard required by Northwestern University and many accessibility regulations.
+
+<CardGroup cols={2}>
+  <Card title="Perceivable" icon="eye">
+    Content is presented in ways that all users can perceive
+  </Card>
+  <Card title="Operable" icon="hand-pointer">
+    User interface components are operable by all users
+  </Card>
+  <Card title="Understandable" icon="book-open">
+    Information and operation are understandable to all users
+  </Card>
+  <Card title="Robust" icon="shield-check">
+    Content is compatible with current and future assistive technologies
+  </Card>
+</CardGroup>
+
+## Built-in Accessibility Features
+
+### Color Contrast
+
+All color combinations meet WCAG 2.1 Level AA contrast requirements:
+
+**Text Contrast Ratios**:
+- Normal text: Minimum 4.5:1
+- Large text (18pt+ or 14pt+ bold): Minimum 3:1
+- UI components and graphics: Minimum 3:1
+
+**Northwestern Purple Adjustments**:
+```scss
+// Darkened secondary color for better contrast
+$secondary: $gray-dark; // Meets 4.5:1 on white backgrounds
+
+// Darkened text-muted for better contrast  
+$text-muted: $gray-dark; // Meets 4.5:1 on light backgrounds
+
+// Form validation colors
+$form-feedback-invalid-color: $danger; // Meets contrast requirements
+```
+
+**Navigation Contrast**:
+```scss
+// Improved from Bootstrap default for accessibility
+.navbar-dark .navbar-nav .nav-link {
+    color: hsla(0,0%,100%,.6); // Increased from .5 for better contrast
+}
+
+.navbar-dark .navbar-nav .nav-link:hover:not(.active) {
+    color: hsla(0,0%,100%,.85); // Clear hover state
+}
+```
+
+### Keyboard Navigation
+
+All interactive elements are accessible via keyboard:
+
+- **Tab Navigation**: Logical tab order through all interactive elements
+- **Focus Indicators**: Visible focus states on all focusable elements
+- **Skip Links**: Skip to main content for screen reader users
+- **Keyboard Shortcuts**: Standard shortcuts work throughout the application
+
+**Focus Styling**:
+```scss
+.focus-ring-purple:focus,
+.focus-ring-purple:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 0.25rem rgba(#4e2a84, 0.25);
+}
+```
+
+### Screen Reader Support
+
+**Semantic HTML**: Proper use of semantic elements:
+```html
+<header>
+<nav>
+<main>
+<article>
+<aside>
+<footer>
+```
+
+**ARIA Labels**: Meaningful labels for screen readers:
+```html
+<button aria-label="Close dialog">×</button>
+<input type="search" aria-label="Search users" />
+<nav aria-label="Main navigation">
+```
+
+**ARIA Live Regions**: Dynamic content announcements:
+```html
+<div role="alert" aria-live="assertive">
+    Form submitted successfully
+</div>
+
+<div aria-live="polite" aria-atomic="true">
+    Updating results...
+</div>
+```
+
+### Form Accessibility
+
+**Labels and Instructions**:
+```html
+<!-- Explicit label association -->
+<label for="email">Email Address</label>
+<input type="email" id="email" name="email" required />
+
+<!-- Required field indicators -->
+<label for="name" class="required">Full Name</label>
+<input type="text" id="name" required aria-required="true" />
+
+<!-- Help text association -->
+<label for="password">Password</label>
+<input 
+    type="password" 
+    id="password" 
+    aria-describedby="password-help" 
+/>
+<small id="password-help">Must be at least 8 characters</small>
+```
+
+**Error Messages**:
+```html
+<label for="username">Username</label>
+<input 
+    type="text" 
+    id="username" 
+    class="is-invalid" 
+    aria-invalid="true"
+    aria-describedby="username-error"
+/>
+<div id="username-error" class="invalid-feedback" role="alert">
+    Username is required
+</div>
+```
+
+## Filament Admin Panel Accessibility
+
+Filament v3 includes built-in accessibility features:
+
+### Focus Management
+
+- Modal dialogs trap focus within the modal
+- Closing modals returns focus to the trigger element
+- Slide-overs maintain logical focus flow
+
+### Keyboard Shortcuts
+
+Filament includes keyboard shortcuts for common actions:
+- **Cmd/Ctrl + K**: Global search
+- **Cmd/Ctrl + S**: Save form
+- **Escape**: Close modals and slide-overs
+
+### Table Accessibility
+
+```php
+public static function table(Table $table): Table
+{
+    return $table
+        ->columns([
+            TextColumn::make('name')
+                ->label('Name') // Clear column labels
+                ->searchable()
+                ->sortable()
+                ->description(fn ($record) => $record->email), // Additional context
+        ])
+        ->emptyStateHeading('No users found')
+        ->emptyStateDescription('Get started by creating a new user.')
+        ->emptyStateIcon('heroicon-o-users');
+}
+```
+
+### Form Field Accessibility
+
+```php
+public static function form(Form $form): Form
+{
+    return $form->schema([
+        TextInput::make('email')
+            ->label('Email Address')
+            ->required()
+            ->email()
+            ->helperText('Enter your Northwestern email address')
+            ->placeholder('netid@northwestern.edu')
+            ->autofocus(),
+            
+        Select::make('role')
+            ->label('Role')
+            ->required()
+            ->options(Role::pluck('name', 'id'))
+            ->searchable()
+            ->helperText('Select the primary role for this user'),
+    ]);
+}
+```
+
+## Responsive Design Accessibility
+
+Accessibility considerations for different screen sizes:
+
+### Mobile Accessibility
+
+- **Touch Targets**: Minimum 44×44 pixels for all interactive elements
+- **Spacing**: Adequate spacing between clickable elements
+- **Zoom Support**: Content reflows properly at 200% zoom
+- **Orientation**: Works in both portrait and landscape
+
+**Bootstrap Responsive Classes**:
+```html
+<button class="btn btn-primary btn-lg">Large touch target</button>
+<div class="p-3">Adequate padding for touch</div>
+```
+
+### Font Scaling
+
+Text scales properly when users adjust their browser font size:
+
+```scss
+// Use rem units for font sizes (relative to root)
+$font-size-base: 0.9rem;
+$line-height-base: 1.6;
+
+// Responsive font sizes
+html {
+    font-size: 16px; // Base size
+}
+
+@media (max-width: 768px) {
+    html {
+        font-size: 14px; // Smaller on mobile
+    }
+}
+```
+
+## Testing for Accessibility
+
+### Automated Testing
+
+The starter kit includes automated accessibility testing with Cypress and axe-core:
+
+**Install cypress-axe**:
+```bash
+pnpm install -D cypress-axe
+```
+
+**Example Test** (`cypress/e2e/accessibility/home.cy.ts`):
+```typescript
+describe('Home Page Accessibility', () => {
+    beforeEach(() => {
+        cy.visit('/');
+        cy.injectAxe();
+    });
+
+    it('should not have accessibility violations', () => {
+        cy.checkA11y();
+    });
+
+    it('should not have violations on specific region', () => {
+        cy.checkA11y('.main-content');
+    });
+
+    it('should be keyboard navigable', () => {
+        cy.get('body').tab();
+        cy.focused().should('have.attr', 'href');
+    });
+});
+```
+
+<Note>
+The starter kit includes cypress-axe as a dev dependency. Run `pnpm test:e2e` to execute accessibility tests.
+</Note>
+
+### Manual Testing Checklist
+
+<CardGroup cols={2}>
+  <Card title="Keyboard Testing" icon="keyboard">
+    - Navigate using only Tab and Shift+Tab
+    - Activate elements with Enter/Space
+    - Ensure focus indicators are visible
+    - Test keyboard shortcuts
+  </Card>
+  <Card title="Screen Reader Testing" icon="volume-high">
+    - Test with NVDA (Windows) or VoiceOver (Mac)
+    - Verify all images have alt text
+    - Check form labels are announced
+    - Ensure dynamic content is announced
+  </Card>
+  <Card title="Zoom Testing" icon="magnifying-glass-plus">
+    - Test at 200% browser zoom
+    - Verify text reflows properly
+    - Check for horizontal scrolling
+    - Ensure touch targets remain usable
+  </Card>
+  <Card title="Color Blindness Testing" icon="eye-slash">
+    - Test with color blindness simulators
+    - Ensure information isn't color-dependent
+    - Verify error states are clear
+    - Check chart/graph accessibility
+  </Card>
+</CardGroup>
+
+## Common Accessibility Patterns
+
+### Modal Dialogs
+
+```html
+<div 
+    role="dialog" 
+    aria-labelledby="modal-title"
+    aria-describedby="modal-description"
+    aria-modal="true"
+>
+    <h2 id="modal-title">Confirm Deletion</h2>
+    <p id="modal-description">Are you sure you want to delete this user?</p>
+    <button>Cancel</button>
+    <button>Delete</button>
+</div>
+```
+
+### Loading States
+
+```html
+<button aria-busy="true" disabled>
+    <span class="spinner" role="status" aria-hidden="true"></span>
+    <span class="visually-hidden">Loading...</span>
+</button>
+```
+
+### Data Tables
+
+```html
+<table>
+    <caption>User List</caption>
+    <thead>
+        <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Email</th>
+            <th scope="col">Role</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <th scope="row">John Doe</th>
+            <td>jdoe@northwestern.edu</td>
+            <td>Administrator</td>
+        </tr>
+    </tbody>
+</table>
+```
+
+### Skip Links
+
+```html
+<a href="#main-content" class="skip-link">
+    Skip to main content
+</a>
+
+<main id="main-content" tabindex="-1">
+    <!-- Main content here -->
+</main>
+```
+
+CSS for skip links:
+```scss
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: $purple;
+    color: white;
+    padding: 8px;
+    z-index: 100;
+}
+
+.skip-link:focus {
+    top: 0;
+}
+```
+
+## Resources and Tools
+
+### Testing Tools
+
+<CardGroup cols={2}>
+  <Card title="axe DevTools" icon="wrench" href="https://www.deque.com/axe/devtools/">
+    Browser extension for accessibility testing
+  </Card>
+  <Card title="WAVE" icon="water" href="https://wave.webaim.org/">
+    Web accessibility evaluation tool
+  </Card>
+  <Card title="NVDA" icon="desktop" href="https://www.nvaccess.org/">
+    Free screen reader for Windows
+  </Card>
+  <Card title="Lighthouse" icon="lighthouse" href="https://developers.google.com/web/tools/lighthouse">
+    Chrome DevTools accessibility audits
+  </Card>
+</CardGroup>
+
+### Guidelines and Documentation
+
+<CardGroup cols={2}>
+  <Card title="WCAG 2.1" icon="book" href="https://www.w3.org/WAI/WCAG21/quickref/">
+    Web Content Accessibility Guidelines quick reference
+  </Card>
+  <Card title="ARIA Authoring Practices" icon="book-open" href="https://www.w3.org/WAI/ARIA/apg/">
+    WAI-ARIA patterns and best practices
+  </Card>
+  <Card title="Northwestern Web Accessibility" icon="university" href="https://www.northwestern.edu/accessibility/">
+    Northwestern University accessibility resources
+  </Card>
+  <Card title="WebAIM" icon="graduation-cap" href="https://webaim.org/">
+    Web accessibility resources and training
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+### Development Guidelines
+
+1. **Use Semantic HTML**: Choose the right element for the job
+2. **Provide Text Alternatives**: Add alt text for images and icons
+3. **Test Early and Often**: Don't wait until the end to test accessibility
+4. **Use ARIA Sparingly**: Native HTML is often more accessible
+5. **Maintain Focus Management**: Ensure logical tab order
+6. **Provide Clear Instructions**: Don't rely solely on visual cues
+7. **Test with Real Users**: Include users with disabilities in testing
+
+### Common Pitfalls to Avoid
+
+- Don't remove focus outlines without providing alternatives
+- Don't use `div` or `span` for interactive elements
+- Don't rely on color alone to convey information
+- Don't create keyboard traps
+- Don't auto-play audio or video
+- Don't use placeholders as labels
+- Don't disable zoom on mobile
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Northwestern Theme" icon="palette" href="/frontend/northwestern-theme">
+    Learn about Northwestern branding and color accessibility
+  </Card>
+  <Card title="Filament Admin" icon="gear" href="/frontend/filament-admin">
+    Accessibility features in the Filament admin panel
+  </Card>
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Learn about automated testing including accessibility tests
+  </Card>
+  <Card title="Frontend Overview" icon="window" href="/frontend/overview">
+    Overview of frontend architecture and technologies
+  </Card>
+</CardGroup>

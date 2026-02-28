@@ -1,0 +1,452 @@
+---
+title: 'Authentication'
+description: 'Bearer token authentication with HMAC-SHA256 hashing, IP allowlists, and usage tracking'
+---
+
+## Overview
+
+The API uses Bearer token authentication with access tokens that are securely hashed using HMAC-SHA256. Tokens support optional IP-based access control, expiration dates, and comprehensive usage tracking.
+
+## Authentication Method
+
+All protected API endpoints require a Bearer token in the `Authorization` header:
+
+```http
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+### Example Request
+
+```bash
+curl -X GET "{baseUrl}/api/v1/me" \
+  -H "Authorization: Bearer sk_live_abc123xyz789..." \
+  -H "Accept: application/json"
+```
+
+<ResponseExample>
+```json
+{
+  "id": 1,
+  "name": "John Doe",
+  "email": "john.doe@northwestern.edu",
+  "netid": "jdoe",
+  "auth_type": "api",
+  "created_at": "2024-01-15T10:30:00.000000Z",
+  "updated_at": "2024-01-15T10:30:00.000000Z"
+}
+```
+</ResponseExample>
+
+## Token Format
+
+Access tokens follow a structured format:
+
+```
+sk_{environment}_{random_string}
+```
+
+- **Prefix:** `sk_` (secret key)
+- **Environment:** `live`, `test`, or `demo`
+- **Random String:** Cryptographically secure random string
+
+**Example:** `sk_live_3xqR9mN7pKf2wYz4LcV8hB6tG5sJ1aD0`
+
+<Warning>
+  Tokens are only displayed **once** during creation. Store them securely. The system stores HMAC-SHA256 hashes, making it impossible to retrieve the original token value.
+</Warning>
+
+## Token Security
+
+### HMAC-SHA256 Hashing
+
+Tokens are hashed before storage using HMAC-SHA256:
+
+```php
+$tokenHash = hash_hmac('sha256', $plainToken, config('app.key'));
+```
+
+**Implementation:** `app/Domains/Auth/Models/AccessToken.php`
+
+This ensures:
+- **No plaintext storage** - Tokens cannot be retrieved from database
+- **Secure comparison** - Hashes are compared, not plaintext values
+- **App key binding** - Tokens are bound to your `APP_KEY`
+
+### Authentication Flow
+
+When a request arrives, the authentication middleware:
+
+1. Extracts token from `Authorization: Bearer {token}` header
+2. Hashes the provided token using HMAC-SHA256
+3. Queries database for matching token hash
+4. Verifies token is active and not expired
+5. Checks token's associated user has `auth_type='api'`
+6. Validates request IP against token's `allowed_ips` (if configured)
+7. Updates token usage metadata (`last_used_at`, `usage_count`, `last_ip_used`)
+8. Authenticates user for the current request
+
+**Implementation:** `app/Domains/Auth/Http/Middleware/AuthenticatesAccessTokens.php:48`
+
+## IP-Based Access Control
+
+Tokens can be restricted to specific IP addresses or CIDR ranges:
+
+### Single IP Address
+
+```json
+{
+  "name": "Production API Token",
+  "allowed_ips": ["203.0.113.42"]
+}
+```
+
+### CIDR Range
+
+```json
+{
+  "name": "Internal Network Token",
+  "allowed_ips": ["192.168.1.0/24", "10.0.0.0/8"]
+}
+```
+
+### Multiple IPs and Ranges
+
+```json
+{
+  "name": "Multi-Location Token",
+  "allowed_ips": [
+    "203.0.113.42",
+    "203.0.113.43",
+    "192.168.1.0/24",
+    "10.0.0.0/8"
+  ]
+}
+```
+
+### No IP Restrictions
+
+Leave `allowed_ips` empty or null to allow requests from any IP:
+
+```json
+{
+  "name": "Unrestricted Token",
+  "allowed_ips": null
+}
+```
+
+<Info>
+  IP validation uses Symfony's `IpUtils::checkIp()` method which supports both IPv4 and IPv6 addresses and CIDR notation.
+</Info>
+
+**Implementation:** `app/Domains/Auth/Http/Middleware/AuthenticatesAccessTokens.php:106`
+
+## Token Expiration
+
+Tokens can have optional expiration dates:
+
+### Create Token with Expiration
+
+```bash
+curl -X POST "{baseUrl}/api/v1/me/tokens" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Temporary Integration Token",
+    "expires_at": "2025-12-31T23:59:59Z"
+  }'
+```
+
+### Expiration Notifications
+
+Users receive automated email notifications before token expiration:
+
+- **30 days** before expiration
+- **14 days** before expiration
+- **7 days** before expiration
+- **3 days** before expiration
+- **1 day** before expiration
+
+**Configuration:** `config/api.php:116`
+
+```php
+'expiration_notifications' => [
+    'enabled' => env('API_ACCESS_TOKEN_EXPIRATION_NOTIFICATIONS_ENABLED', true),
+    'intervals' => [30, 14, 7, 3, 1],
+],
+```
+
+<Note>
+  Expired tokens are immediately rejected during authentication with a `token-invalid-or-expired` failure reason.
+</Note>
+
+## Authentication Realm
+
+The API uses a configurable authentication realm for Bearer token challenges:
+
+```http
+WWW-Authenticate: Bearer realm="Northwestern Laravel Starter API"
+```
+
+The realm is included in:
+- 401 Unauthorized response headers
+- Token expiration notification emails
+
+**Configuration:** `config/api.php:44`
+
+```php
+'auth_realm' => config('app.name') . ' API',
+```
+
+## Usage Tracking
+
+Each successful authentication updates token metadata:
+
+<ResponseField name="last_used_at" type="timestamp">
+  Timestamp of most recent successful authentication
+</ResponseField>
+
+<ResponseField name="usage_count" type="integer">
+  Total number of successful authentications
+</ResponseField>
+
+<ResponseField name="last_ip_used" type="string">
+  IP address from most recent request
+</ResponseField>
+
+**Example:**
+
+```json
+{
+  "id": 1,
+  "name": "Production API Token",
+  "last_used_at": "2024-01-15T14:32:10.000000Z",
+  "usage_count": 4287,
+  "last_ip_used": "203.0.113.42",
+  "created_at": "2024-01-01T00:00:00.000000Z"
+}
+```
+
+**Implementation:** `app/Domains/Auth/Http/Middleware/AuthenticatesAccessTokens.php:86`
+
+<Note>
+  Usage tracking updates occur **without triggering audit logs** to minimize performance impact and storage requirements.
+</Note>
+
+## Authentication Errors
+
+All authentication failures return 401 Unauthorized with [RFC 9457 Problem Details](/api-reference/errors):
+
+### Missing Authorization Header
+
+```bash
+curl -X GET "{baseUrl}/api/v1/me" \
+  -H "Accept: application/json"
+```
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Authentication failed",
+  "instance": "/api/v1/me",
+  "trace_id": "b4f5aa7a-1470-4d92-8d3c-98e7c7de9f5f"
+}
+```
+
+**Response headers:**
+```http
+WWW-Authenticate: Bearer realm="Northwestern Laravel Starter API"
+```
+
+### Invalid Token Format
+
+Authorization header must be prefixed with "Bearer ":
+
+```bash
+curl -X GET "{baseUrl}/api/v1/me" \
+  -H "Authorization: sk_live_abc123xyz..." \
+  -H "Accept: application/json"
+```
+
+**Failure reason:** `invalid-header-format`
+
+### Empty Bearer Token
+
+```bash
+curl -X GET "{baseUrl}/api/v1/me" \
+  -H "Authorization: Bearer " \
+  -H "Accept: application/json"
+```
+
+**Failure reason:** `missing-credentials`
+
+### Invalid or Expired Token
+
+Token not found, expired, or user is inactive:
+
+```bash
+curl -X GET "{baseUrl}/api/v1/me" \
+  -H "Authorization: Bearer sk_live_invalid_token" \
+  -H "Accept: application/json"
+```
+
+**Failure reason:** `token-invalid-or-expired`
+
+### IP Address Denied
+
+Request IP does not match token's `allowed_ips`:
+
+```bash
+# Token restricted to 192.168.1.0/24
+# Request from 203.0.113.42
+curl -X GET "{baseUrl}/api/v1/me" \
+  -H "Authorization: Bearer sk_live_abc123xyz..." \
+  -H "Accept: application/json"
+```
+
+**Failure reason:** `ip-denied`
+
+### Failure Reason Summary
+
+| Failure Reason | Description | Implementation |
+|----------------|-------------|----------------|
+| `invalid-header-format` | Authorization header missing or not prefixed with "Bearer " | `AuthenticatesAccessTokens.php:55` |
+| `missing-credentials` | Authorization header has "Bearer " but no token provided | `AuthenticatesAccessTokens.php:60` |
+| `token-invalid-or-expired` | Token not found, expired, or associated user is inactive | `AuthenticatesAccessTokens.php:74` |
+| `ip-denied` | Client IP does not match token's `allowed_ips` configuration | `AuthenticatesAccessTokens.php:83` |
+
+**Implementation:** `app/Domains/Core/Enums/ApiRequestFailureEnum.php`
+
+<Info>
+  Failure reasons are logged in the `api_request_logs` table for security monitoring and debugging.
+</Info>
+
+## Public Endpoints
+
+Some endpoints do not require authentication:
+
+### Health Check
+
+```bash
+curl -X GET "{baseUrl}/api/health" \
+  -H "Accept: application/json"
+```
+
+```json
+{
+  "status": "healthy",
+  "services": {
+    "database": "ok",
+    "cache": "ok"
+  }
+}
+```
+
+**Implementation:** `routes/api.php:20`
+
+Public endpoints only require the `EnsureApiEnabled` middleware and skip authentication.
+
+## Creating Access Tokens
+
+Tokens can be created through:
+
+### 1. Web UI (Filament Admin)
+
+Navigate to your user profile and create tokens with:
+- Custom names for identification
+- Optional expiration dates
+- Optional IP restrictions
+
+### 2. API Endpoint
+
+```bash
+curl -X POST "{baseUrl}/api/v1/me/tokens" \
+  -H "Authorization: Bearer YOUR_EXISTING_TOKEN" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "CI/CD Pipeline Token",
+    "expires_at": "2025-12-31T23:59:59Z",
+    "allowed_ips": ["192.168.1.0/24", "10.0.0.1"]
+  }'
+```
+
+<ResponseExample>
+```json
+{
+  "id": 2,
+  "name": "CI/CD Pipeline Token",
+  "token": "sk_live_3xqR9mN7pKf2wYz4LcV8hB6tG5sJ1aD0",
+  "expires_at": "2025-12-31T23:59:59.000000Z",
+  "allowed_ips": ["192.168.1.0/24", "10.0.0.1"],
+  "created_at": "2024-01-15T10:30:00.000000Z"
+}
+```
+</ResponseExample>
+
+<Warning>
+  The `token` field is only returned during creation. Store it securely - it cannot be retrieved later.
+</Warning>
+
+### 3. Database Seeder (Development)
+
+For local development, use the demo user token:
+
+**Configuration:** `config/api.php:136`
+
+```env
+API_DEMO_USER_ACCESS_TOKEN=demo_token_12345
+```
+
+The seeder will create an API user with this token.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use specific token names">
+    Name tokens by their purpose: "Production Integration", "CI/CD Pipeline", "Mobile App v2.0". This makes auditing and rotation easier.
+  </Accordion>
+
+  <Accordion title="Restrict by IP when possible">
+    If your integration runs from known IPs, configure `allowed_ips` to limit the token's attack surface.
+  </Accordion>
+
+  <Accordion title="Set expiration dates">
+    Use expiration dates for temporary integrations or to force periodic token rotation.
+  </Accordion>
+
+  <Accordion title="Rotate tokens regularly">
+    Create new tokens and revoke old ones periodically, especially after team member changes.
+  </Accordion>
+
+  <Accordion title="Monitor usage metrics">
+    Review `last_used_at`, `usage_count`, and `last_ip_used` to detect anomalies or unused tokens.
+  </Accordion>
+
+  <Accordion title="Never commit tokens to version control">
+    Use environment variables or secure secret management systems to store tokens.
+  </Accordion>
+
+  <Accordion title="Revoke immediately when compromised">
+    If a token is exposed, revoke it immediately via API or admin UI and create a replacement.
+  </Accordion>
+</AccordionGroup>
+
+## Token Management
+
+See the [Access Token Management](/api/access-tokens) guide for:
+
+- Creating tokens with custom configurations
+- Listing and viewing token details
+- Revoking tokens
+- Monitoring token usage
+- Automated expiration notifications
+
+## Related Documentation
+
+- [API Overview](/api-reference/overview) - API base URL and configuration
+- [Error Responses](/api-reference/errors) - Authentication error formats
+- [Access Tokens](/api/access-tokens) - Complete token management guide
+- [Request Logging](/api/request-logging) - Authentication failure tracking

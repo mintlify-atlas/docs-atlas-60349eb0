@@ -1,0 +1,110 @@
+---
+title: 'Integrations Overview'
+description: 'Northwestern University service integrations for user data and event processing'
+---
+
+Your application integrates with Northwestern University's enterprise services to provide seamless authentication, user data synchronization, and real-time event processing.
+
+## Available Integrations
+
+<CardGroup cols={2}>
+  <Card title="Directory Service" icon="address-book" href="/integrations/directory-service">
+    Search and sync user data from Northwestern's LDAP directory via the Directory Search API
+  </Card>
+  
+  <Card title="EventHub" icon="webhook" href="/integrations/eventhub">
+    Receive real-time event notifications about user and organizational changes
+  </Card>
+</CardGroup>
+
+## Integration Architecture
+
+All Northwestern integrations are managed through the `northwestern-sysdev/laravel-soa` package, which provides:
+
+- **DirectorySearch**: Query Northwestern's LDAP directory for user information
+- **EventHub**: Subscribe to and receive event notifications from Northwestern's event bus
+- **WebSSO**: Authenticate users through Northwestern's single sign-on system
+
+### Configuration
+
+Integration settings are centralized in `config/nusoa.php`:
+
+```php config/nusoa.php
+return [
+    'directorySearch' => [
+        'baseUrl' => env('DIRECTORY_SEARCH_URL'),
+        'apiKey' => env('DIRECTORY_SEARCH_API_KEY'),
+        'healthCheckNetid' => env('DIRECTORY_SEARCH_HEALTH_CHECK_NETID', 'swd2981'),
+    ],
+
+    'eventHub' => [
+        'mock' => env('EVENT_HUB_MOCK_ENABLED', env('APP_ENV') == 'local'),
+        'baseUrl' => env('EVENT_HUB_BASE_URL'),
+        'apiKey' => env('EVENT_HUB_API_KEY'),
+        'hmacVerificationSharedSecret' => env('EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET'),
+    ],
+];
+```
+
+## Environment Variables
+
+<AccordionGroup>
+  <Accordion title="Directory Search">
+    ```bash .env
+    DIRECTORY_SEARCH_URL=https://northwestern-prod.apigee.net/directory-search
+    DIRECTORY_SEARCH_API_KEY=your_api_key_here
+    DIRECTORY_SEARCH_HEALTH_CHECK_NETID=swd2981
+    ```
+  </Accordion>
+
+  <Accordion title="EventHub">
+    ```bash .env
+    EVENT_HUB_MOCK_ENABLED=false
+    EVENT_HUB_BASE_URL=https://northwestern-prod.apigee.net/event-hub
+    EVENT_HUB_API_KEY=your_api_key_here
+    EVENT_HUB_HMAC_VERIFICATION_SHARED_SECRET=your_shared_secret
+    EVENT_HUB_HMAC_VERIFICATION_HEADER=X-HMAC-Signature
+    EVENT_HUB_HMAC_VERIFICATION_ALGORITHM_TYPE_REGISTRATION=HmacSHA256
+    EVENT_HUB_HMAC_VERIFICATION_ALGORITHM_TYPE_PHP=sha256
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Mock Mode for Local Development
+
+Both Directory Search and EventHub support mock mode for local development:
+
+```bash .env
+EVENT_HUB_MOCK_ENABLED=true
+```
+
+When enabled, the integrations use local implementations that don't require API credentials or network access to Northwestern services.
+
+## Health Checks
+
+The application includes health checks for all Northwestern integrations:
+
+```bash
+php artisan health:check
+```
+
+This validates:
+- Directory Search API connectivity
+- EventHub configuration
+- Required credentials are present
+
+<Warning>
+  Health checks require valid API credentials. In mock mode, health checks will report warnings but won't fail.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configure Directory Service" icon="arrow-right" href="/integrations/directory-service">
+    Set up user synchronization from Northwestern's directory
+  </Card>
+  
+  <Card title="Set Up EventHub Webhooks" icon="arrow-right" href="/integrations/eventhub">
+    Configure real-time event notifications
+  </Card>
+</CardGroup>

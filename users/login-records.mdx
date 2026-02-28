@@ -1,0 +1,342 @@
+---
+title: 'Login Record Tracking'
+description: 'Track user authentication events and historical metrics'
+---
+
+Login records capture authentication events with historical user segment data for analytics and security monitoring.
+
+## Overview
+
+Every successful authentication creates a `UserLoginRecord` that stores:
+
+- When the user logged in
+- What segment they belonged to at login time
+- Request metadata (IP address, user agent)
+
+This enables accurate historical reporting even as user roles and permissions change over time.
+
+## UserLoginRecord Model
+
+The model is located at `app/Domains/User/Models/UserLoginRecord.php:1`.
+
+### Attributes
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `user_id` | integer | Foreign key to users table |
+| `logged_in_at` | datetime | Timestamp of the login event |
+| `segment` | enum | User's segment at login time |
+| `ip_address` | string\|null | Client IP address (up to 45 chars for IPv6) |
+| `user_agent` | string\|null | Browser/client user agent string |
+
+### Database Schema
+
+The table is created by `database/migrations/2025_03_10_235306_create_user_login_records_table.php:1`.
+
+**Indexes for performance:**
+
+```sql
+INDEX (user_id)
+INDEX (logged_in_at)
+INDEX (logged_in_at, segment)
+INDEX (logged_in_at, user_id)
+```
+
+These indexes optimize common query patterns like:
+- Recent logins across all users
+- Login trends by segment over time
+- User-specific login history
+
+<Note>
+Auditing is disabled for login records (`$auditingDisabled = true`) to avoid audit table bloat from high-volume login events.
+</Note>
+
+## Recording Logins
+
+Logins are recorded via the `RecordLogin` action at `app/Domains/User/Actions/RecordLogin.php:1`.
+
+### Usage
+
+The action is called from authentication controllers after successful verification:
+
+```php
+use App\Domains\User\Actions\RecordLogin;
+
+$recordLogin = resolve(RecordLogin::class);
+
+// Record the login event
+$recordLogin($user, $request);
+```
+
+### Controllers That Record Logins
+
+Login recording is integrated into:
+
+- **`WebSSOController`**: SSO authentication flow
+- **`VerifyLoginCodeController`**: Local user email verification
+
+See references at `app/Domains/User/Actions/RecordLogin.php:18`.
+
+### What Gets Recorded
+
+The action creates a login record with:
+
+```php
+$user->login_records()->create([
+    'logged_in_at' => now(),
+    'segment' => ($this->determineUserSegment)($user),
+    'ip_address' => $request->ip(),
+    'user_agent' => $request->userAgent(),
+]);
+```
+
+## User Segments
+
+User segments classify users at login time for historical metrics. Segments are defined at `app/Domains/User/Enums/UserSegmentEnum.php:1`.
+
+### Available Segments
+
+| Segment | Value | Description |
+|---------|-------|-------------|
+| Super Admin | `super-admin` | Users with `MANAGE_ALL` permission |
+| External User | `external-user` | Local authentication users |
+| Other | `other` | All other authenticated users |
+
+### Segment Determination
+
+Segments are determined by the `DetermineUserSegment` action at `app/Domains/User/Actions/DetermineUserSegment.php:1`.
+
+**Logic:**
+
+```php
+return match (true) {
+    $this->isSuperAdmin($user) => UserSegmentEnum::SUPER_ADMIN,
+    $this->isExternalUser($user) => UserSegmentEnum::EXTERNAL_USER,
+    default => UserSegmentEnum::OTHER,
+};
+```
+
+**Helper methods:**
+
+```php
+// Super admin check
+public function isSuperAdmin(User $user): bool
+{
+    return $user->can(PermissionEnum::MANAGE_ALL);
+}
+
+// External user check
+public function isExternalUser(User $user): bool
+{
+    return $user->auth_type === AuthTypeEnum::LOCAL;
+}
+```
+
+### Why Capture Segments?
+
+Storing the segment at login time is crucial because:
+
+<Steps>
+<Step title="Roles Change Over Time">
+  A user promoted to admin should show as "other" in historical data before the promotion.
+</Step>
+
+<Step title="Accurate Reporting">
+  Answers questions like "How many admin logins occurred last month?" correctly, even if those users are no longer admins.
+</Step>
+
+<Step title="Security Auditing">
+  Tracks privileged access patterns regardless of current user state.
+</Step>
+</Steps>
+
+### Extending Segments
+
+You can expand segment classification to capture more metrics:
+
+```php
+// In DetermineUserSegment.php
+
+return match (true) {
+    $this->isSuperAdmin($user) => UserSegmentEnum::SUPER_ADMIN,
+    $this->isExternalUser($user) => UserSegmentEnum::EXTERNAL_USER,
+    $this->isStudent($user) => UserSegmentEnum::STUDENT, // New segment
+    $this->isFaculty($user) => UserSegmentEnum::FACULTY, // New segment
+    default => UserSegmentEnum::OTHER,
+};
+
+private function isStudent(User $user): bool
+{
+    return $user->primary_affiliation === AffiliationEnum::STUDENT;
+}
+```
+
+Remember to add new cases to `UserSegmentEnum` and update the enum's display methods.
+
+## Querying Login Records
+
+### Accessing User's Login History
+
+```php
+// All login records for a user
+$loginRecords = $user->login_records;
+
+// Most recent login
+$latestLogin = $user->latest_login_record;
+
+// Recent logins (last 30 days)
+$recentLogins = $user->login_records()
+    ->where('logged_in_at', '>=', now()->subDays(30))
+    ->orderByDesc('logged_in_at')
+    ->get();
+```
+
+### Global Login Analytics
+
+```php
+use App\Domains\User\Models\UserLoginRecord;
+
+// Total logins in the last 7 days
+$weeklyLogins = UserLoginRecord::query()
+    ->where('logged_in_at', '>=', now()->subWeek())
+    ->count();
+
+// Login count by segment this month
+$segmentBreakdown = UserLoginRecord::query()
+    ->where('logged_in_at', '>=', now()->startOfMonth())
+    ->groupBy('segment')
+    ->selectRaw('segment, count(*) as login_count')
+    ->get();
+
+// Super admin logins in the last 30 days
+$adminLogins = UserLoginRecord::query()
+    ->where('segment', UserSegmentEnum::SUPER_ADMIN)
+    ->where('logged_in_at', '>=', now()->subDays(30))
+    ->with('user')
+    ->orderByDesc('logged_in_at')
+    ->get();
+```
+
+### Security Monitoring
+
+```php
+// Detect multiple logins from different IPs
+$suspiciousActivity = UserLoginRecord::query()
+    ->where('user_id', $userId)
+    ->where('logged_in_at', '>=', now()->subHour())
+    ->distinct('ip_address')
+    ->count('ip_address');
+
+if ($suspiciousActivity > 3) {
+    // Alert: Multiple IPs in short time
+}
+
+// Track logins from specific IP range
+$vpnLogins = UserLoginRecord::query()
+    ->where('ip_address', 'LIKE', '10.0.%')
+    ->where('logged_in_at', '>=', now()->subDay())
+    ->count();
+```
+
+## Relationships
+
+The UserLoginRecord model defines relationships at `app/Domains/User/Models/UserLoginRecord.php:26`:
+
+### Belongs To User
+
+```php
+public function user(): BelongsTo
+{
+    return $this->belongsTo(User::class);
+}
+```
+
+**Usage:**
+
+```php
+$loginRecord = UserLoginRecord::find($id);
+$user = $loginRecord->user; // Access the associated user
+```
+
+### User Has Many Login Records
+
+Defined in the User model at `app/Domains/User/Models/User.php:109`:
+
+```php
+public function login_records(): HasMany
+{
+    return $this->hasMany(UserLoginRecord::class);
+}
+
+public function latest_login_record(): HasOne
+{
+    return $this->hasOne(UserLoginRecord::class)->latestOfMany();
+}
+```
+
+## Best Practices
+
+### Do Record Logins
+
+- Every successful authentication (SSO and local)
+- Both initial logins and session renewals (if your app supports them)
+- API authentication events (if tracking is needed)
+
+### Don't Record
+
+- Failed login attempts (use separate failed attempt tracking)
+- Impersonation events (track separately for audit purposes)
+- Middleware-level session checks (too high volume)
+
+### Performance Considerations
+
+<Note>
+Login records can accumulate quickly. Consider implementing data retention policies:
+
+- Archive records older than 1 year
+- Aggregate historical data for reporting
+- Use database partitioning for very high-volume applications
+</Note>
+
+### Privacy and Compliance
+
+IP addresses and user agents are personal data under GDPR and similar regulations:
+
+- Document retention periods in your privacy policy
+- Implement data deletion for departed users if required
+- Consider anonymization for long-term analytics
+
+## Reporting Examples
+
+### Weekly Active Users
+
+```php
+use App\Domains\User\Models\UserLoginRecord;
+
+$weeklyActiveUsers = UserLoginRecord::query()
+    ->where('logged_in_at', '>=', now()->subWeek())
+    ->distinct('user_id')
+    ->count('user_id');
+```
+
+### Peak Login Times
+
+```php
+$peakHours = UserLoginRecord::query()
+    ->selectRaw('HOUR(logged_in_at) as hour, count(*) as login_count')
+    ->where('logged_in_at', '>=', now()->subMonth())
+    ->groupBy('hour')
+    ->orderByDesc('login_count')
+    ->get();
+```
+
+### Segment Trends Over Time
+
+```php
+$trends = UserLoginRecord::query()
+    ->selectRaw('DATE(logged_in_at) as date, segment, count(*) as count')
+    ->where('logged_in_at', '>=', now()->subDays(30))
+    ->groupBy('date', 'segment')
+    ->orderBy('date')
+    ->get();
+```

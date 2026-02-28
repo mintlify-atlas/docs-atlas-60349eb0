@@ -1,0 +1,486 @@
+---
+title: Domain-Driven Design
+description: How Northwestern Laravel Starter uses DDD to organize code by business domains
+---
+
+The Northwestern Laravel Starter uses Domain-Driven Design (DDD) principles to organize code around business concerns rather than technical layers. This approach improves maintainability, testability, and makes the codebase easier to understand.
+
+## What is Domain-Driven Design?
+
+Domain-Driven Design is a software development approach that:
+
+- Organizes code around **business domains** rather than technical layers
+- Uses **ubiquitous language** that both developers and domain experts understand
+- Emphasizes **bounded contexts** where each domain has clear boundaries
+- Focuses on **core domain logic** separate from infrastructure concerns
+
+<Note>
+  This starter kit implements a **pragmatic subset** of DDD principles, focusing on domain-based organization without the full complexity of tactical patterns like Aggregates, Value Objects, or Domain Events in their strictest form.
+</Note>
+
+## Domain Structure
+
+The application is divided into five primary domains:
+
+### Auth Domain
+
+Handles authentication and authorization concerns.
+
+```
+app/Domains/Auth/
+├── Actions/
+│   ├── Api/                    # Access token management
+│   │   ├── IssueAccessToken.php
+│   │   └── RotateAccessToken.php
+│   ├── Impersonation/          # User impersonation
+│   │   ├── StartImpersonation.php
+│   │   └── StopImpersonation.php
+│   └── Local/                  # Passwordless auth
+│       ├── IssueLoginChallenge.php
+│       └── VerifyLoginChallengeCode.php
+├── Contracts/
+│   └── OneTimeCodeGenerator.php
+├── Enums/
+│   ├── AuthTypeEnum.php
+│   ├── PermissionEnum.php
+│   ├── RoleTypeEnum.php
+│   └── SystemRoleEnum.php
+├── Http/
+│   ├── Controllers/
+│   ├── Middleware/
+│   ├── Requests/
+│   └── Resources/
+├── Models/
+│   ├── AccessToken.php
+│   ├── LoginChallenge.php
+│   ├── Permission.php
+│   └── Role.php
+├── Jobs/
+├── Mail/
+├── Policies/
+└── Seeders/
+```
+
+**Key Responsibilities:**
+- Multi-method authentication (SSO, API tokens, passwordless)
+- Role and permission management
+- Access token lifecycle management
+- User impersonation
+- Authorization policies
+
+### User Domain
+
+Manages user accounts and profiles.
+
+```
+app/Domains/User/
+├── Actions/
+│   ├── Api/
+│   ├── Directory/              # Northwestern Directory sync
+│   │   ├── FindOrUpdateUserFromDirectory.php
+│   │   └── SyncUserFromDirectory.php
+│   ├── Local/
+│   ├── DetermineUserSegment.php
+│   ├── PersistUserWithUniqueUsername.php
+│   └── RecordLogin.php
+├── Enums/
+│   └── UserSegmentEnum.php
+├── Events/
+├── Http/
+│   ├── Controllers/
+│   ├── Resources/
+│   └── Webhooks/
+├── Jobs/
+├── Listeners/
+├── Models/
+│   ├── User.php
+│   └── UserLoginRecord.php
+├── Policies/
+└── QueryBuilders/
+```
+
+**Key Responsibilities:**
+- User account management
+- Profile information
+- Northwestern Directory synchronization
+- Login tracking and analytics
+- User segmentation for metrics
+
+### Support Domain
+
+Provides support ticket functionality.
+
+```
+app/Domains/Support/
+├── Actions/
+│   └── CreateSupportTicket.php
+├── Contracts/
+│   └── TicketSystemGateway.php
+├── Enums/
+│   └── TicketSystemEnum.php
+├── Gateway/
+│   └── TicketSystemGatewayFactory.php
+├── Gateways/
+│   ├── Mail/
+│   │   └── MailGateway.php
+│   └── TeamDynamix/
+│       └── TeamDynamixGateway.php
+├── Models/
+│   └── SupportTicket.php
+├── Repositories/
+│   └── SupportTicketRepository.php
+└── Seeders/
+```
+
+**Key Responsibilities:**
+- Support ticket submission
+- Multiple ticketing system integrations (Mail, TeamDynamix)
+- Automatic fallback to email on failure
+- Ticket tracking and status management
+
+### Core Domain
+
+Provides shared utilities and services used across domains.
+
+```
+app/Domains/Core/
+├── Attributes/           # PHP attributes for metadata
+├── Concerns/             # Shared model traits
+├── Contracts/            # Shared interfaces
+├── Database/             # Database utilities
+├── Enums/                # Shared enumerations
+├── Exceptions/           # Custom exception classes
+├── GlobalAlerts/         # System-wide notifications
+├── Health/               # Health check implementations
+├── Helpers/              # Utility functions
+├── Models/               # Base models
+├── Rules/                # Validation rules
+├── Seeders/              # Core data seeders
+├── Services/             # Shared services
+│   ├── ApiRouteInspector.php
+│   ├── ConfigValidation/
+│   ├── DateTimeFormatter.php
+│   └── IdempotentSeederResolver.php
+└── ValueObjects/         # Immutable value objects
+```
+
+**Key Responsibilities:**
+- Configuration validation
+- Health monitoring
+- Audit logging infrastructure
+- Common validation rules
+- Date/time formatting
+- Database utilities
+
+### Foundation Domain
+
+Contains application-level concerns.
+
+```
+app/Domains/Foundation/
+└── Casts/               # Custom Eloquent casts
+```
+
+**Key Responsibilities:**
+- Application bootstrapping concerns
+- Custom Eloquent casts
+- Framework integration points
+
+## Domain Anatomy
+
+Each domain follows a consistent structure:
+
+### Actions
+
+Single-purpose classes that encapsulate business logic. See [Actions Pattern](/architecture/actions-pattern) for details.
+
+### Models
+
+Eloquent models representing domain entities:
+
+```php app/Domains/User/Models/User.php
+class User extends Authenticatable implements Auditable
+{
+    use AuditableConcern;
+    use HasApiTokens;
+    use HasRoles;
+    use Notifiable;
+    
+    // Domain-specific methods
+    public function isNorthwesternUser(): bool
+    {
+        return $this->auth_type === AuthTypeEnum::SSO;
+    }
+}
+```
+
+### Enums
+
+Type-safe enumerations for domain constants:
+
+```php app/Domains/Auth/Enums/AuthTypeEnum.php
+enum AuthTypeEnum: string
+{
+    case SSO = 'sso';
+    case API = 'api';
+    case LOCAL = 'local';
+}
+```
+
+### Contracts
+
+Interfaces defining boundaries between components:
+
+```php app/Domains/Auth/Contracts/OneTimeCodeGenerator.php
+interface OneTimeCodeGenerator
+{
+    public function __invoke(int $digits): string;
+}
+```
+
+### Http Layer
+
+HTTP concerns organized by type:
+
+```
+Http/
+├── Controllers/        # Request handling
+├── Middleware/         # Request/response filtering
+├── Requests/           # Form request validation
+└── Resources/          # API response formatting
+```
+
+### Jobs
+
+Asynchronous queue-based operations:
+
+```php app/Domains/Auth/Jobs/SendLoginCodeEmailJob.php
+class SendLoginCodeEmailJob implements ShouldQueue
+{
+    public function __construct(
+        public int $loginChallengeId,
+        public string $encryptedCode,
+    ) {}
+    
+    public function handle(): void
+    {
+        // Send verification code email
+    }
+}
+```
+
+### Events & Listeners
+
+Event-driven behavior:
+
+```php
+// Event
+class UserCreated
+{
+    public function __construct(public User $user) {}
+}
+
+// Listener
+class SendWelcomeEmail
+{
+    public function handle(UserCreated $event): void
+    {
+        // Send welcome email
+    }
+}
+```
+
+### Policies
+
+Authorization rules for domain entities:
+
+```php
+class UserPolicy
+{
+    public function update(User $authenticatedUser, User $user): bool
+    {
+        return $authenticatedUser->id === $user->id
+            || $authenticatedUser->hasPermissionTo(PermissionEnum::MANAGE_USERS);
+    }
+}
+```
+
+## Cross-Domain Communication
+
+Domains communicate through well-defined interfaces:
+
+### Direct Action Calls
+
+Actions from one domain can call actions from another:
+
+```php app/Domains/User/Actions/RecordLogin.php
+readonly class RecordLogin
+{
+    public function __construct(
+        private DetermineUserSegment $determineUserSegment, // User domain
+    ) {}
+
+    public function __invoke(User $user, Request $request): void
+    {
+        $user->login_records()->create([
+            'segment' => ($this->determineUserSegment)($user),
+            // ...
+        ]);
+    }
+}
+```
+
+### Events
+
+Loose coupling through event broadcasting:
+
+```php
+// User domain publishes event
+event(new UserCreated($user));
+
+// Auth domain listens
+class AssignDefaultRole
+{
+    public function handle(UserCreated $event): void
+    {
+        $event->user->assignRole('Northwestern User');
+    }
+}
+```
+
+### Service Container
+
+Shared services resolved through the container:
+
+```php
+class CreateSupportTicket
+{
+    public function __construct(
+        protected TicketSystemGateway $gateway, // Resolved from container
+    ) {}
+}
+```
+
+## Benefits of This Approach
+
+<CardGroup cols={2}>
+  <Card title="Modularity" icon="cubes">
+    Each domain is self-contained and can be understood independently.
+  </Card>
+  <Card title="Maintainability" icon="wrench">
+    Related code is grouped together, making changes easier to implement.
+  </Card>
+  <Card title="Testability" icon="vial">
+    Domain logic can be tested without framework dependencies.
+  </Card>
+  <Card title="Scalability" icon="chart-line">
+    New domains can be added without affecting existing ones.
+  </Card>
+  <Card title="Team Collaboration" icon="users">
+    Teams can work on different domains with minimal conflicts.
+  </Card>
+  <Card title="Ubiquitous Language" icon="comment">
+    Code uses business terminology that stakeholders understand.
+  </Card>
+</CardGroup>
+
+## Adding a New Domain
+
+To add a new domain to your application:
+
+1. **Create the domain directory structure:**
+
+```bash
+mkdir -p app/Domains/YourDomain/{Actions,Models,Http,Enums,Contracts}
+```
+
+2. **Define your models:**
+
+```php app/Domains/YourDomain/Models/YourModel.php
+namespace App\Domains\YourDomain\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class YourModel extends Model
+{
+    // Model definition
+}
+```
+
+3. **Create actions for business logic:**
+
+```php app/Domains/YourDomain/Actions/CreateYourThing.php
+namespace App\Domains\YourDomain\Actions;
+
+readonly class CreateYourThing
+{
+    public function __invoke(array $data): YourModel
+    {
+        // Business logic here
+    }
+}
+```
+
+4. **Add HTTP layer components as needed:**
+
+```php app/Domains/YourDomain/Http/Controllers/YourController.php
+namespace App\Domains\YourDomain\Http\Controllers;
+
+use App\Domains\YourDomain\Actions\CreateYourThing;
+
+class YourController extends Controller
+{
+    public function store(
+        YourRequest $request,
+        CreateYourThing $createYourThing,
+    ) {
+        $thing = $createYourThing($request->validated());
+        return response()->json($thing);
+    }
+}
+```
+
+<Tip>
+  Start with the minimum viable structure and expand as your domain grows. You don't need every directory on day one.
+</Tip>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep Domains Focused">
+    Each domain should have a clear, focused purpose. If a domain becomes too large, consider splitting it into multiple domains.
+  </Accordion>
+  
+  <Accordion title="Minimize Cross-Domain Dependencies">
+    Domains should be as independent as possible. Use events or interfaces for cross-domain communication.
+  </Accordion>
+  
+  <Accordion title="Use Ubiquitous Language">
+    Name classes, methods, and variables using terminology that domain experts would use.
+  </Accordion>
+  
+  <Accordion title="Encapsulate Business Logic in Actions">
+    Keep controllers thin by moving business logic to Action classes. See [Actions Pattern](/architecture/actions-pattern).
+  </Accordion>
+  
+  <Accordion title="Define Clear Boundaries with Contracts">
+    Use interfaces to define boundaries between domains and allow for multiple implementations.
+  </Accordion>
+</AccordionGroup>
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Actions Pattern" icon="bolt" href="/architecture/actions-pattern">
+    Learn how business logic is encapsulated in Action classes
+  </Card>
+  <Card title="Architecture Overview" icon="sitemap" href="/architecture/overview">
+    Understand the overall architectural approach
+  </Card>
+  <Card title="Development Guide" icon="code" href="/development">
+    Start building with the starter kit
+  </Card>
+  <Card title="API Development" icon="brackets-curly" href="/api-reference/introduction">
+    Build API endpoints following these patterns
+  </Card>
+</CardGroup>

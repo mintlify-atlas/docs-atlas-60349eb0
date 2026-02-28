@@ -1,0 +1,607 @@
+---
+title: Actions Pattern
+description: Encapsulating business logic in single-responsibility Action classes
+---
+
+The Actions Pattern is a core architectural pattern used throughout the Northwestern Laravel Starter. Actions are single-purpose classes that encapsulate discrete units of business logic, making them reusable, testable, and easy to understand.
+
+## What is an Action?
+
+An Action is a class with a single responsibility: performing one specific operation. Actions:
+
+- Encapsulate **business logic** separate from HTTP concerns
+- Are **reusable** across controllers, jobs, console commands, and other actions
+- Follow the **Single Responsibility Principle**
+- Use `__invoke()` to act as **callable objects**
+- Support **dependency injection** through constructor parameters
+
+<Note>
+  Actions are not a framework feature—they're a design pattern. You can adopt this pattern in any Laravel application.
+</Note>
+
+## Basic Structure
+
+Here's a simple action that records a user login:
+
+```php app/Domains/User/Actions/RecordLogin.php
+namespace App\Domains\User\Actions;
+
+use App\Domains\User\Models\User;
+use Illuminate\Http\Request;
+
+readonly class RecordLogin
+{
+    public function __construct(
+        private DetermineUserSegment $determineUserSegment,
+    ) {}
+
+    public function __invoke(User $user, Request $request): void
+    {
+        $user->login_records()->create([
+            'logged_in_at' => now(),
+            'segment' => ($this->determineUserSegment)($user),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+    }
+}
+```
+
+**Key characteristics:**
+
+- `readonly` class for immutability
+- Dependencies injected via constructor
+- Single public `__invoke()` method
+- Clear input parameters and return type
+- Focused on one operation: recording a login
+
+## Why Use Actions?
+
+### Problem: Fat Controllers
+
+Traditional Laravel applications often put business logic in controllers:
+
+```php
+// ❌ Business logic mixed with HTTP concerns
+class LoginController extends Controller
+{
+    public function callback(Request $request)
+    {
+        $user = User::where('email', $request->email)->first();
+        
+        // Determine segment
+        $segment = match(true) {
+            $user->hasPermissionTo('manage_all') => 'super_admin',
+            $user->auth_type === 'local' => 'external_user',
+            default => 'other',
+        };
+        
+        // Record login
+        $user->login_records()->create([
+            'logged_in_at' => now(),
+            'segment' => $segment,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+        
+        Auth::login($user);
+        return redirect('/dashboard');
+    }
+}
+```
+
+Problems with this approach:
+- Logic cannot be reused (what if API login needs the same behavior?)
+- Hard to test without making HTTP requests
+- Controller responsibility is unclear
+- Difficult to maintain as logic grows
+
+### Solution: Extract to Actions
+
+```php
+// ✅ Thin controller, business logic in actions
+class LoginController extends Controller
+{
+    public function callback(
+        Request $request,
+        RecordLogin $recordLogin,
+    ) {
+        $user = User::where('email', $request->email)->first();
+        
+        $recordLogin($user, $request);
+        
+        Auth::login($user);
+        return redirect('/dashboard');
+    }
+}
+```
+
+Now the logic can be reused:
+
+```php
+// In another controller
+class ApiLoginController extends Controller
+{
+    public function login(
+        Request $request,
+        RecordLogin $recordLogin, // Same action!
+    ) {
+        $user = $this->authenticateUser($request);
+        $recordLogin($user, $request);
+        return response()->json(['token' => $user->createToken()->plainTextToken]);
+    }
+}
+
+// In a console command
+class SimulateLoginCommand extends Command
+{
+    public function handle(RecordLogin $recordLogin)
+    {
+        $user = User::first();
+        $recordLogin($user, request());
+    }
+}
+
+// In tests
+class RecordLoginTest extends TestCase
+{
+    public function test_records_login_with_segment()
+    {
+        $user = User::factory()->create();
+        $request = Request::create('/', 'GET');
+        
+        $action = app(RecordLogin::class);
+        $action($user, $request);
+        
+        $this->assertDatabaseHas('user_login_records', [
+            'user_id' => $user->id,
+        ]);
+    }
+}
+```
+
+## Real-World Examples
+
+### Example 1: Issue Login Challenge
+
+This action generates and sends a passwordless login code:
+
+```php app/Domains/Auth/Actions/Local/IssueLoginChallenge.php
+namespace App\Domains\Auth\Actions\Local;
+
+use App\Domains\Auth\Contracts\OneTimeCodeGenerator;
+use App\Domains\Auth\Jobs\SendLoginCodeEmailJob;
+use App\Domains\Auth\Models\LoginChallenge;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
+
+final readonly class IssueLoginChallenge
+{
+    public function __construct(
+        private OneTimeCodeGenerator $oneTimeCodeGenerator,
+    ) {}
+
+    public function __invoke(
+        string $email, 
+        ?string $ip, 
+        ?string $userAgent
+    ): LoginChallenge {
+        $email = mb_strtolower(trim($email));
+
+        // Rate limiting
+        $rateLimitKey = "login-code:{$email}";
+        $maxAttempts = (int) config('local-auth.rate_limit_per_hour');
+
+        if (RateLimiter::tooManyAttempts($rateLimitKey, $maxAttempts)) {
+            $seconds = RateLimiter::availableIn($rateLimitKey);
+            $minutes = (int) ceil($seconds / 60);
+            throw new RuntimeException(
+                "Too many login attempts. Please try again in {$minutes} minute(s)."
+            );
+        }
+
+        return DB::transaction(function () use ($email, $ip, $userAgent, $rateLimitKey) {
+            // Generate code
+            $digits = (int) config('local-auth.code.digits', 6);
+            $expires = (int) config('local-auth.code.expires_in_minutes', 10);
+            $code = ($this->oneTimeCodeGenerator)($digits);
+
+            // Store challenge
+            $challenge = LoginChallenge::create([
+                'email' => $email,
+                'code_hash' => Hash::make($code),
+                'expires_at' => CarbonImmutable::now()->addMinutes($expires),
+                'requested_ip' => $ip,
+                'requested_user_agent' => Str::limit($userAgent, 512, ''),
+            ]);
+
+            RateLimiter::hit($rateLimitKey, (int) CarbonInterval::hour()->totalSeconds);
+
+            // Queue email
+            SendLoginCodeEmailJob::dispatch(
+                loginChallengeId: $challenge->id,
+                encryptedCode: Crypt::encryptString($code),
+            )->afterCommit();
+
+            return $challenge;
+        });
+    }
+}
+```
+
+**What this demonstrates:**
+
+- Complex business logic (rate limiting, code generation, email queueing)
+- Transaction handling
+- Dependency injection (OneTimeCodeGenerator contract)
+- Clear separation of concerns
+- Easy to test each piece independently
+
+### Example 2: Create Support Ticket
+
+This action orchestrates ticket creation with automatic fallback:
+
+```php app/Domains/Support/Actions/CreateSupportTicket.php
+namespace App\Domains\Support\Actions;
+
+use App\Domains\Support\Contracts\TicketSystemGateway;
+use App\Domains\Support\Enums\TicketSystemEnum;
+use App\Domains\Support\Gateway\TicketSystemGatewayFactory;
+use App\Domains\Support\Models\SupportTicket;
+use App\Domains\Support\Repositories\SupportTicketRepository;
+
+class CreateSupportTicket
+{
+    public function __construct(
+        protected TicketSystemGateway $gateway,
+        protected TicketSystemGatewayFactory $factory,
+        protected SupportTicketRepository $repo,
+    ) {}
+
+    /**
+     * Submit the ticket and handle fallback on failure.
+     */
+    public function __invoke(SupportTicket $ticket): SupportTicket
+    {
+        // Try primary gateway
+        $result = $this->gateway->create($ticket);
+        $ticket = $this->repo->updatePostStatus($ticket, $result);
+
+        // Fallback to email if primary fails
+        if ($result->creationError && $result->ticketSystemType !== TicketSystemEnum::MAIL) {
+            $fallbackResult = $this->factory->fallback()->create($ticket);
+
+            if (! $fallbackResult->creationError) {
+                $ticket->update(['fallback_sent_at' => now()]);
+            }
+        }
+
+        return $ticket;
+    }
+}
+```
+
+**What this demonstrates:**
+
+- Orchestration of multiple services (gateway, factory, repository)
+- Error handling with automatic fallback
+- Gateway pattern integration
+- Business logic separate from HTTP layer
+
+### Example 3: Issue Access Token
+
+This action creates cryptographically secure API tokens:
+
+```php app/Domains/Auth/Actions/Api/IssueAccessToken.php
+namespace App\Domains\Auth\Actions\Api;
+
+use App\Domains\Auth\Enums\AuthTypeEnum;
+use App\Domains\Auth\Models\AccessToken;
+use App\Domains\User\Models\User;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Str;
+use InvalidArgumentException;
+
+readonly class IssueAccessToken
+{
+    /**
+     * Issue a new token for the given API user.
+     *
+     * @return array{0: string, 1: AccessToken} Tuple of plaintext token and AccessToken model
+     */
+    public function __invoke(
+        User $user,
+        string $name,
+        ?CarbonInterface $expiresAt = null,
+        ?array $allowedIps = null,
+    ): array {
+        if ($user->auth_type !== AuthTypeEnum::API) {
+            throw new InvalidArgumentException(
+                'Tokens can only be issued for API users.'
+            );
+        }
+
+        $rawToken = Str::random(length: 64);
+
+        $accessToken = $user->access_tokens()->create([
+            'name' => $name,
+            'token_prefix' => mb_substr($rawToken, 0, 5),
+            'token_hash' => AccessToken::hashFromPlain($rawToken),
+            'expires_at' => $expiresAt,
+            'allowed_ips' => $allowedIps,
+        ]);
+
+        return [$rawToken, $accessToken];
+    }
+}
+```
+
+**What this demonstrates:**
+
+- Input validation
+- Cryptographic operations
+- Clear return type documentation
+- Type-safe parameters with modern PHP features
+
+### Example 4: Persist User With Unique Username
+
+This action handles unique constraint violations gracefully:
+
+```php app/Domains/User/Actions/PersistUserWithUniqueUsername.php
+namespace App\Domains\User\Actions;
+
+use App\Domains\Auth\Enums\AuthTypeEnum;
+use App\Domains\Auth\Enums\RoleModificationOriginEnum;
+use App\Domains\Auth\Enums\SystemRoleEnum;
+use App\Domains\Auth\Models\Role;
+use App\Domains\User\Models\User;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
+
+final class PersistUserWithUniqueUsername
+{
+    public function __invoke(User $user): User
+    {
+        try {
+            return DB::transaction(function () use ($user) {
+                $user->save();
+
+                // Auto-assign default role for SSO users
+                if ($user->auth_type === AuthTypeEnum::SSO) {
+                    $role = Role::query()
+                        ->where('name', SystemRoleEnum::NORTHWESTERN_USER->value)
+                        ->firstOrFail();
+                    $user->assignRoleWithAudit(
+                        $role, 
+                        RoleModificationOriginEnum::SSO_PROVISIONING
+                    );
+                }
+
+                return $user;
+            });
+        } catch (UniqueConstraintViolationException) {
+            // If constraint violated, return existing user
+            return User::query()
+                ->where('auth_type', $user->auth_type)
+                ->where('username', $user->username)
+                ->firstOrFail();
+        }
+    }
+}
+```
+
+**What this demonstrates:**
+
+- Exception handling for race conditions
+- Database transactions
+- Conditional business logic
+- Idempotent behavior
+
+## Action Composition
+
+Actions can call other actions through dependency injection:
+
+```php
+readonly class RecordLogin
+{
+    public function __construct(
+        private DetermineUserSegment $determineUserSegment, // Another action
+    ) {}
+
+    public function __invoke(User $user, Request $request): void
+    {
+        $user->login_records()->create([
+            'segment' => ($this->determineUserSegment)($user), // Call it
+            // ...
+        ]);
+    }
+}
+```
+
+This creates a **composable architecture** where complex operations are built from simple, reusable actions.
+
+## When to Use Actions
+
+<AccordionGroup>
+  <Accordion title="✅ Use Actions When...">
+    - The logic needs to be reused across multiple places
+    - The operation has clear inputs and outputs
+    - The logic is complex enough to deserve its own class
+    - You want to test business logic independently of HTTP
+    - The operation represents a distinct business concept
+  </Accordion>
+  
+  <Accordion title="❌ Don't Use Actions When...">
+    - The logic is trivial (simple CRUD operations)
+    - It's purely presentational (better as a view component)
+    - It's framework-specific glue code (belongs in service provider)
+    - It's just moving data without transformation (use DTOs instead)
+  </Accordion>
+</AccordionGroup>
+
+## Testing Actions
+
+Actions are extremely testable because they're decoupled from HTTP:
+
+```php
+class RecordLoginTest extends TestCase
+{
+    public function test_records_login_with_correct_segment()
+    {
+        // Arrange
+        $user = User::factory()->create();
+        $request = Request::create('/', 'GET', [], [], [], [
+            'REMOTE_ADDR' => '192.168.1.1',
+            'HTTP_USER_AGENT' => 'TestBrowser/1.0',
+        ]);
+        
+        // Mock the segment determiner
+        $this->mock(DetermineUserSegment::class)
+            ->shouldReceive('__invoke')
+            ->once()
+            ->with($user)
+            ->andReturn(UserSegmentEnum::OTHER);
+
+        // Act
+        $action = app(RecordLogin::class);
+        $action($user, $request);
+
+        // Assert
+        $this->assertDatabaseHas('user_login_records', [
+            'user_id' => $user->id,
+            'segment' => 'other',
+            'ip_address' => '192.168.1.1',
+        ]);
+    }
+}
+```
+
+## Organizing Actions
+
+Actions are organized by domain and subdomain:
+
+```
+app/Domains/Auth/Actions/
+├── Api/                    # API-specific auth actions
+│   ├── IssueAccessToken.php
+│   └── RotateAccessToken.php
+├── Impersonation/          # Impersonation actions
+│   ├── StartImpersonation.php
+│   └── StopImpersonation.php
+└── Local/                  # Local auth actions
+    ├── IssueLoginChallenge.php
+    └── VerifyLoginChallengeCode.php
+```
+
+<Tip>
+  Group related actions in subdirectories to keep the Actions folder organized as your application grows.
+</Tip>
+
+## Best Practices
+
+<Steps>
+  <Step title="Single Responsibility">
+    Each action should do one thing well. If an action is doing multiple operations, split it into separate actions.
+  </Step>
+  
+  <Step title="Use Readonly Classes">
+    Make action classes `readonly` to prevent mutation and ensure thread-safety.
+    
+    ```php
+    readonly class MyAction { ... }
+    ```
+  </Step>
+  
+  <Step title="Type Everything">
+    Use strict types for parameters and return values to catch errors early.
+    
+    ```php
+    public function __invoke(User $user, string $name): AccessToken
+    ```
+  </Step>
+  
+  <Step title="Document Complex Logic">
+    Use docblocks to explain why, not what. The code shows what; comments explain why.
+    
+    ```php
+    /**
+     * Determines user segment at login time for historical metrics.
+     * 
+     * This is crucial because user roles can change over time, but we
+     * want to know what segment they were in at each login.
+     */
+    ```
+  </Step>
+  
+  <Step title="Handle Edge Cases">
+    Consider race conditions, constraint violations, and error scenarios.
+    
+    ```php
+    try {
+        $user->save();
+    } catch (UniqueConstraintViolationException $e) {
+        return User::where('username', $user->username)->firstOrFail();
+    }
+    ```
+  </Step>
+  
+  <Step title="Use Dependency Injection">
+    Inject dependencies through the constructor, not the `__invoke()` method.
+    
+    ```php
+    public function __construct(
+        private OtherAction $otherAction,
+        private SomeService $service,
+    ) {}
+    ```
+  </Step>
+</Steps>
+
+## Actions vs. Jobs
+
+Both Actions and Jobs encapsulate operations, but they serve different purposes:
+
+| Aspect | Actions | Jobs |
+|--------|---------|------|
+| **Purpose** | Business logic | Asynchronous work |
+| **Execution** | Synchronous | Asynchronous (queued) |
+| **Context** | Any (controller, command, job, test) | Queue worker |
+| **Dependencies** | Injected via constructor | Passed as properties |
+| **Retries** | No automatic retries | Built-in retry logic |
+
+<Tip>
+  **Use Jobs when** you need asynchronous execution, retries, or rate limiting. **Use Actions** for synchronous business logic that may be called from multiple contexts.
+</Tip>
+
+You can even use Actions inside Jobs:
+
+```php
+class ProcessUserImportJob implements ShouldQueue
+{
+    public function handle(CreateUserFromImport $action)
+    {
+        foreach ($this->records as $record) {
+            $action($record); // Action handles business logic
+        }
+    }
+}
+```
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Domain-Driven Design" icon="sitemap" href="/architecture/domain-driven-design">
+    Learn how domains organize actions and other components
+  </Card>
+  <Card title="Architecture Overview" icon="cubes" href="/architecture/overview">
+    Understand the broader architectural context
+  </Card>
+  <Card title="Development Guide" icon="code" href="/development">
+    Start building actions in your application
+  </Card>
+  <Card title="Testing" icon="vial" href="/essentials/testing">
+    Learn how to test actions effectively
+  </Card>
+</CardGroup>
